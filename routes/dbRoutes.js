@@ -3,6 +3,7 @@ const router = express.Router();
 const { getFullDB, saveFullDB, verifyGST, getDashboardSummary } = require('../controllers/dbController');
 const { createSale, createPurchase, addProduct, addParty, getList, revenueTimeseries, getPurchaseById, editPurchase, deletePurchase, getProductById, editProduct, deleteProduct, bulkImportProducts, exportProductsCSV, getProductAlerts } = require('../controllers/dbController');
 const { addStaff, editStaff, deleteStaff, getStaffList, toggleStaffActive, logStaffActivity, getStaffActivities, addAttendance, getAttendance, setSalary, getStaffPerformance, createInvoice, editInvoice, deleteInvoice, getInvoices, getInvoiceById, duplicateInvoice, convertToInvoice, setupRecurring, invoiceAgingReport } = require('../controllers/dbController');
+const { adjustStock, transferStock, purchaseReport } = require('../controllers/dbController');
 const { body, validationResult, query } = require('express-validator');
 
 const validate = (checks) => async (req, res, next) => {
@@ -77,4 +78,12 @@ router.post('/invoices/:id/recurring', setupRecurring);
 router.get('/invoices-aging', invoiceAgingReport);
 router.get('/invoices/:id/pdf', require('../controllers/dbController').getInvoicePDF);
 
+// Stock management routes
+router.post('/products/:id/adjust', adjustStock);
+router.post('/products/:id/transfer', transferStock);
+
+// Purchase report
+router.get('/purchase-report', purchaseReport);
+
 module.exports = router;
+

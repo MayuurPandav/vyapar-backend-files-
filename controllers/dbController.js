@@ -1167,3 +1167,105 @@ module.exports.convertToInvoice = convertToInvoice;
 module.exports.setupRecurring = setupRecurring;
 module.exports.invoiceAgingReport = invoiceAgingReport;
 module.exports.getInvoicePDF = getInvoicePDF;
+
+// ---- Stock Adjustment API ----
+async function adjustStock(req, res) {
+  const { id } = req.params;
+  const { username, qty, reason } = req.body;
+  if (!id || !username || qty == null) return res.status(400).json({ status: 'error', message: 'id, username, qty required' });
+  try {
+    const db = getDB();
+    const delta = Number(qty);
+    let result;
+    if (ObjectId.isValid(id)) {
+      result = await db.collection('products').updateOne({ _id: new ObjectId(id), username }, { $inc: { stock: delta } });
+    } else {
+      result = await db.collection('products').updateOne({ id, username }, { $inc: { stock: delta } });
+    }
+    // log the adjustment
+    await db.collection('stock_adjustments').insertOne({
+      productId: id, username, qty: delta, reason: reason || 'manual',
+      timestamp: new Date().toISOString()
+    });
+    return res.json({ status: 'success', matched: result.matchedCount });
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: err.message });
+  }
+}
+
+// ---- Stock Transfer API ----
+async function transferStock(req, res) {
+  const { id } = req.params;
+  const { username, qty, fromBranch, toBranch } = req.body;
+  if (!id || !username || !qty || !toBranch) return res.status(400).json({ status: 'error', message: 'id, username, qty, toBranch required' });
+  try {
+    const db = getDB();
+    const transferQty = Number(qty);
+    // Decrease stock in source product
+    if (ObjectId.isValid(id)) {
+      await db.collection('products').updateOne({ _id: new ObjectId(id), username }, { $inc: { stock: -transferQty } });
+    } else {
+      await db.collection('products').updateOne({ id, username }, { $inc: { stock: -transferQty } });
+    }
+    // Log the transfer
+    await db.collection('stock_transfers').insertOne({
+      productId: id, username, qty: transferQty,
+      fromBranch: fromBranch || 'Main Warehouse', toBranch,
+      timestamp: new Date().toISOString()
+    });
+    return res.json({ status: 'success' });
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: err.message });
+  }
+}
+
+// ---- Purchase Report API ----
+async function purchaseReport(req, res) {
+  const { username } = req.query;
+  if (!username) return res.status(400).json({ status: 'error', message: 'username required' });
+  try {
+    const db = getDB();
+    const purchases = await db.collection('purchases').find({ username }).toArray();
+    const toNumber = v => Number(v) || 0;
+    const today = new Date();
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const startOfWeek = new Date(today); startOfWeek.setDate(today.getDate() - 6);
+
+    const totalPurchases = purchases.reduce((s, p) => s + toNumber(p.amount), 0);
+    const monthPurchases = purchases.filter(p => new Date(p.date) >= startOfMonth).reduce((s, p) => s + toNumber(p.amount), 0);
+    const weekPurchases = purchases.filter(p => new Date(p.date) >= startOfWeek).reduce((s, p) => s + toNumber(p.amount), 0);
+    const pendingDues = purchases.filter(p => (p.status || '').toLowerCase() === 'pending').reduce((s, p) => s + toNumber(p.amount), 0);
+    const totalCount = purchases.length;
+
+    // By type breakdown
+    const byType = {};
+    purchases.forEach(p => {
+      const t = p.purchaseType || 'Purchase Invoice';
+      byType[t] = (byType[t] || 0) + toNumber(p.amount);
+    });
+
+    // Top suppliers
+    const supplierMap = {};
+    purchases.forEach(p => {
+      const name = p.supplier || 'Unknown';
+      supplierMap[name] = (supplierMap[name] || 0) + toNumber(p.amount);
+    });
+    const topSuppliers = Object.entries(supplierMap).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total).slice(0, 10);
+
+    // Supplier dues
+    const parties = await db.collection('parties').find({ username, type: { $regex: /supplier/i } }).toArray();
+    const supplierDues = parties.filter(p => toNumber(p.balance) > 0).map(p => ({ name: p.name, balance: toNumber(p.balance), phone: p.phone || '' }));
+
+    return res.json({
+      status: 'success',
+      totalPurchases, monthPurchases, weekPurchases, pendingDues, totalCount,
+      byType, topSuppliers, supplierDues
+    });
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: err.message });
+  }
+}
+
+module.exports.adjustStock = adjustStock;
+module.exports.transferStock = transferStock;
+module.exports.purchaseReport = purchaseReport;

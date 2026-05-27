@@ -1,0 +1,1 @@
+{"username":"admin@vyapar.com","supplier":"Acme Supplies","date":"2026-05-25","amount":150,"mode":"Cash","status":"Paid","notes":"Test purchase cash","items":[{"name":"Widget A","qty":1,"rate":150,"total":150}],"subtotal":150,"taxAmount":0}

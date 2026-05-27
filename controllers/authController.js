@@ -71,6 +71,11 @@ async function register(req, res) {
 
     await logAudit(username, 'REGISTER_SUCCESS');
 
+    // Determine onboarding flags for the new user
+    const profileComplete = false;
+    const subscription = { active: false, expiry: null, planName: 'Bronze', planCycle: 'MONTHLY' };
+    const onboardingRequired = true;
+
     return res.json({
       status: "success",
       token: "mongo_token_" + username,
@@ -79,7 +84,10 @@ async function register(req, res) {
         role: 'admin',
         phone,
         status: 'active'
-      }
+      },
+      profileComplete,
+      subscription,
+      onboardingRequired
     });
 
   } catch (err) {
@@ -100,6 +108,24 @@ async function login(req, res) {
         return res.status(403).json({ status: "error", message: "Your account has been blocked by the administrator." });
       }
 
+      // Load settings to determine onboarding / subscription state
+      const settings = await db.collection('settings').findOne({ username: user.username }) || {};
+
+      const profileComplete = !!(settings.bizName && settings.email && settings.phone);
+
+      let subscription = { active: false, expiry: null, planName: settings.planName || null, planCycle: settings.planCycle || null };
+      if (settings.subscriptionExpiry) {
+        try {
+          const expiry = new Date(settings.subscriptionExpiry);
+          subscription.expiry = settings.subscriptionExpiry;
+          subscription.active = expiry >= new Date(new Date().setHours(0,0,0,0));
+        } catch (e) {
+          subscription.active = false;
+        }
+      }
+
+      const onboardingRequired = !profileComplete || !subscription.active;
+
       await logAudit(user.username, "LOGIN_SUCCESS");
       return res.json({
         status: "success",
@@ -109,13 +135,46 @@ async function login(req, res) {
           role: user.role,
           phone: user.phone,
           status: user.status
-        }
+        },
+        profileComplete,
+        subscription,
+        onboardingRequired
       });
     }
 
     return res.status(401).json({ status: "error", message: "Invalid credentials" });
   } catch (err) {
     return res.status(500).json({ status: "error", message: err.message });
+  }
+}
+
+// Subscribe / Activate plan (onboarding flow)
+async function subscribe(req, res) {
+  const { username, planName } = req.body;
+  if (!username || !planName) return res.status(400).json({ status: 'error', message: 'username and planName required' });
+  try {
+    const db = getDB();
+    const plan = await db.collection('sa_plans').findOne({ name: planName });
+    const price = plan ? (parseFloat(plan.price) || 0) : 0;
+    const cycle = plan ? (plan.cycle || 'MONTHLY') : 'MONTHLY';
+
+    const today = new Date();
+    const daysToAdd = (cycle === 'YEARLY') ? 365 : 30;
+    const expiry = new Date(today);
+    expiry.setDate(expiry.getDate() + daysToAdd);
+    const expiryStr = expiry.toISOString().substring(0,10);
+
+    // Record payment
+    await db.collection('sa_payments').insertOne({ username, amount: price, plan_name: planName, date: new Date().toISOString().substring(0,10), method: 'Onboarding', type: 'signup' });
+
+    // Update settings
+    await db.collection('settings').updateOne({ username }, { $set: { subscriptionExpiry: expiryStr, planName: planName, planCycle: cycle, subscriptionCancelled: false } }, { upsert: true });
+
+    await logAudit(username, 'SUBSCRIBE', `Plan ${planName} activated until ${expiryStr}`);
+
+    return res.json({ status: 'success', subscription: { active: true, expiry: expiryStr, planName, planCycle: cycle } });
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: err.message });
   }
 }
 
@@ -143,9 +202,58 @@ async function sendOTP(req, res) {
   // Twilio / SMTP Providers can be implemented here based on env variables
   try {
     if (field === 'email') {
-      const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
-      if (SMTP_HOST && SMTP_PORT && SMTP_USER && SMTP_PASS && SMTP_FROM) {
-        // Implement node mailer send if needed
+      const { SENDGRID_API_KEY, SENDGRID_FROM } = process.env;
+      if (SENDGRID_API_KEY && SENDGRID_FROM) {
+        // Send via SendGrid Web API
+        try {
+          await fetch('https://api.sendgrid.com/v3/mail/send', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${SENDGRID_API_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              personalizations: [{ to: [{ email: cleanValue }] }],
+              from: { email: SENDGRID_FROM },
+              subject: 'Your Vyapar verification code',
+              content: [{ type: 'text/plain', value: `Your verification code is: ${code}` }]
+            })
+          });
+          sent = true;
+        } catch (err) {
+          sendError = err.message;
+        }
+      }
+      // Optionally validate email via AbstractAPI if key present
+      const { ABSTRACTAPI_KEY } = process.env;
+      if (ABSTRACTAPI_KEY) {
+        try {
+          // lightweight validation (not strictly required)
+          await fetch(`https://emailvalidation.abstractapi.com/v1/?api_key=${ABSTRACTAPI_KEY}&email=${encodeURIComponent(cleanValue)}`);
+        } catch (_) {}
+      }
+    }
+    if (field === 'phone') {
+      const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM } = process.env;
+      if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_FROM) {
+        try {
+          const body = new URLSearchParams({ To: cleanValue, From: TWILIO_FROM, Body: `Your Vyapar verification code is: ${code}` });
+          await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`, {
+            method: 'POST',
+            headers: { 'Authorization': 'Basic ' + Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: body.toString()
+          });
+          sent = true;
+        } catch (err) {
+          sendError = err.message;
+        }
+      }
+      // Optionally validate phone number via AbstractAPI (if provided)
+      const { ABSTRACTAPI_KEY } = process.env;
+      if (ABSTRACTAPI_KEY) {
+        try {
+          await fetch(`https://phonevalidation.abstractapi.com/v1/?api_key=${ABSTRACTAPI_KEY}&phone=${encodeURIComponent(cleanValue)}`);
+        } catch (_) {}
       }
     }
   } catch (err) {
@@ -208,10 +316,40 @@ async function verifyOTP(req, res) {
   }
 }
 
+// GSTIN verification endpoint (format check + optional external provider)
+async function verifyGSTIN(req, res) {
+  const { gstin } = req.body;
+  if (!gstin) return res.status(400).json({ status: 'error', message: 'gstin required' });
+  const clean = (gstin || '').trim().toUpperCase();
+  const gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+  if (!gstRegex.test(clean)) return res.status(400).json({ status: 'error', message: 'GSTIN format invalid' });
+
+  // If external GST API configured, forward request
+  const { GST_API_URL, GST_API_KEY } = process.env;
+  if (GST_API_URL && GST_API_KEY) {
+    try {
+      const resp = await fetch(GST_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GST_API_KEY}` },
+        body: JSON.stringify({ gstin: clean })
+      });
+      const j = await resp.json();
+      return res.json({ status: 'success', authoritative: true, result: j });
+    } catch (err) {
+      return res.status(502).json({ status: 'error', message: 'External GST verification failed', error: err.message });
+    }
+  }
+
+  // No external provider — return format OK
+  return res.json({ status: 'success', authoritative: false, message: 'GSTIN format valid (no external verification configured).' });
+}
+
 module.exports = {
   register,
   login,
+  subscribe,
   sendOTP,
   verifyOTP,
+  verifyGSTIN,
   logAudit
 };

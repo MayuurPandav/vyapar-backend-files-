@@ -1,0 +1,1 @@
+{"username":"admin@vyapar.com","customer":"Alice","date":"2026-05-25","amount":200,"mode":"Cash","status":"Paid","notes":"Test sale cash","items":[{"name":"Widget A","qty":2,"rate":100,"total":200}],"subtotal":200,"taxAmount":0}

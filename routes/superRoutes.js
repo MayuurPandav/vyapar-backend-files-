@@ -13,6 +13,7 @@ const {
   superPayments,
   getUserPayments,
   superAudit
+  , renewSubscription, getPaymentInvoice, cancelSubscription, toggleAutoRenew, applyCoupon, sendExpiryReminders
 } = require('../controllers/superController');
 
 router.get('/stats', getSuperStats);
@@ -22,6 +23,12 @@ router.post('/subscription', superSubscription);
 router.post('/status', superStatus);
 router.get('/subscription-info', superSubscriptionInfo);
 router.post('/plan', superPlan);
+router.post('/renew', renewSubscription);
+router.get('/payment-invoice/:id', getPaymentInvoice);
+router.post('/cancel', cancelSubscription);
+router.post('/auto-renew', toggleAutoRenew);
+router.post('/apply-coupon', applyCoupon);
+router.get('/expiry-reminders', sendExpiryReminders);
 
 // Plans support GET, POST, DELETE
 router.route('/plans')

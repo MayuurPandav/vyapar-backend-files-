@@ -1,5 +1,6 @@
 const { getDB } = require('../config/db');
 const { ObjectId } = require('mongodb');
+const bcrypt = require('bcryptjs');
 
 // In-memory OTP storage matching backend/app.py OTP_STORE
 const OTP_STORE = {};
@@ -147,6 +148,8 @@ async function login(req, res) {
     return res.status(500).json({ status: "error", message: err.message });
   }
 }
+
+
 
 // Subscribe / Activate plan (onboarding flow)
 async function subscribe(req, res) {

@@ -17,6 +17,8 @@ async function getFullDB(req, res) {
     const purchases = await db.collection('purchases').find({ username }).project({ _id: 0 }).toArray();
     const parties = await db.collection('parties').find({ username }).project({ _id: 0 }).toArray();
     const transactions = await db.collection('transactions').find({ username }).project({ _id: 0 }).toArray();
+    const expenses = await db.collection('expenses').find({ username }).project({ _id: 0 }).toArray();
+    const offers = await db.collection('offers').find({ username }).project({ _id: 0 }).toArray();
     const settings = await db.collection('settings').findOne({ username }, { projection: { _id: 0 } }) || {};
 
     return res.json({
@@ -25,6 +27,8 @@ async function getFullDB(req, res) {
       purchases,
       parties,
       transactions,
+      expenses,
+      offers,
       settings
     });
   } catch (err) {
@@ -34,7 +38,7 @@ async function getFullDB(req, res) {
 
 // Save complete business state for a user
 async function saveFullDB(req, res) {
-  const { username, products, sales, purchases, parties, transactions, settings } = req.body;
+  const { username, products, sales, purchases, parties, transactions, expenses, offers, settings } = req.body;
   if (!username) {
     return res.status(400).json({ status: "error", message: "Username required" });
   }
@@ -101,7 +105,18 @@ async function saveFullDB(req, res) {
         id: p.id, name: p.name, type: p.type,
         phone: p.phone, balance: p.balance, lastTxn: p.lastTxn,
         notes: p.notes, username,
-        state: p.state || 'Karnataka'
+        state: p.state || 'Karnataka',
+        email: p.email || '',
+        whatsappNumber: p.whatsappNumber || '',
+        billingAddress: p.billingAddress || '',
+        shippingAddress: p.shippingAddress || '',
+        gstin: p.gstin || '',
+        pan: p.pan || '',
+        customerGroup: p.customerGroup || 'Retail',
+        creditLimit: Number(p.creditLimit) || 0,
+        paymentTerms: p.paymentTerms || 'Net 30',
+        openingBalance: Number(p.openingBalance) || 0,
+        bankDetails: p.bankDetails || ''
       }));
       await db.collection('parties').insertMany(partiesToInsert);
     }
@@ -117,6 +132,30 @@ async function saveFullDB(req, res) {
         creditAccount: t.creditAccount || ''
       }));
       await db.collection('transactions').insertMany(txnsToInsert);
+    }
+
+    // 5.5 Save expenses
+    await db.collection('expenses').deleteMany({ username });
+    if (expenses && expenses.length) {
+      const expsToInsert = expenses.map(e => ({
+        id: e.id, date: e.date, category: e.category,
+        amount: Number(e.amount) || 0, paymentMode: e.paymentMode || 'Cash',
+        description: e.description || '', username
+      }));
+      await db.collection('expenses').insertMany(expsToInsert);
+    }
+
+    // 5.6 Save offers
+    await db.collection('offers').deleteMany({ username });
+    if (offers && offers.length) {
+      const offersToInsert = offers.map(o => ({
+        id: o.id, code: o.code, type: o.type, value: Number(o.value) || 0,
+        startDate: o.startDate, endDate: o.endDate, minBillAmount: Number(o.minBillAmount) || 0,
+        applicableCategory: o.applicableCategory || '', applicableProduct: o.applicableProduct || '',
+        usageLimit: Number(o.usageLimit) || 0, usedCount: Number(o.usedCount) || 0,
+        isActive: !!o.isActive, username
+      }));
+      await db.collection('offers').insertMany(offersToInsert);
     }
 
     // 6. Save settings
@@ -830,10 +869,12 @@ async function logStaffActivity(req, res) {
 // Get staff activity logs
 async function getStaffActivities(req, res) {
   const { username, staffId, limit = 50 } = req.query;
-  if (!username || !staffId) return res.status(400).json({ status: 'error', message: 'username and staffId required' });
+  if (!username) return res.status(400).json({ status: 'error', message: 'username required' });
   try {
     const db = getDB();
-    const logs = await db.collection('staff_activity').find({ username, staffId }).sort({ timestamp: -1 }).limit(Number(limit)).toArray();
+    const query = { username };
+    if (staffId) query.staffId = staffId;
+    const logs = await db.collection('staff_activity').find(query).sort({ timestamp: -1 }).limit(Number(limit)).toArray();
     return res.json(logs.map(l => ({ ...l, _id: String(l._id), timestamp: l.timestamp })));
   } catch (err) {
     return res.status(500).json({ status: 'error', message: err.message });
@@ -857,10 +898,11 @@ async function addAttendance(req, res) {
 // Get attendance for staff
 async function getAttendance(req, res) {
   const { username, staffId, from, to } = req.query;
-  if (!username || !staffId) return res.status(400).json({ status: 'error', message: 'username and staffId required' });
+  if (!username) return res.status(400).json({ status: 'error', message: 'username required' });
   try {
     const db = getDB();
-    const q = { username, staffId };
+    const q = { username };
+    if (staffId) q.staffId = staffId;
     if (from || to) q.date = {};
     if (from) q.date.$gte = from;
     if (to) q.date.$lte = to;
@@ -890,11 +932,13 @@ async function setSalary(req, res) {
 // Simple staff performance summary (activity count + attendance days)
 async function getStaffPerformance(req, res) {
   const { username, staffId } = req.query;
-  if (!username || !staffId) return res.status(400).json({ status: 'error', message: 'username and staffId required' });
+  if (!username) return res.status(400).json({ status: 'error', message: 'username required' });
   try {
     const db = getDB();
-    const activityCount = await db.collection('staff_activity').countDocuments({ username, staffId });
-    const attendanceCount = await db.collection('staff_attendance').countDocuments({ username, staffId, status: 'present' });
+    const q = { username };
+    if (staffId) q.staffId = staffId;
+    const activityCount = await db.collection('staff_activity').countDocuments(q);
+    const attendanceCount = await db.collection('staff_attendance').countDocuments({ ...q, status: 'present' });
     return res.json({ status: 'success', activityCount, attendanceCount });
   } catch (err) {
     return res.status(500).json({ status: 'error', message: err.message });

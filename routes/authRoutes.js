@@ -9,4 +9,5 @@ router.post('/send-otp', sendOTP);
 router.post('/verify-otp', verifyOTP);
 router.post('/verify-gstin', require('../controllers/authController').verifyGSTIN);
 
+
 module.exports = router;

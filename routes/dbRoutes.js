@@ -35,12 +35,12 @@ router.post('/products', validate([
 	body('name').exists().trim().isLength({ min: 1 }),
 	body('price').optional().isNumeric()
 ]), addProduct);
-router.get('/products/:id', getProductById);
-router.put('/products/:id', validate([ body('username').exists() ]), editProduct);
-router.delete('/products/:id', deleteProduct);
 router.post('/products/bulk', bulkImportProducts);
 router.get('/products/export', exportProductsCSV);
 router.get('/products/alerts', getProductAlerts);
+router.get('/products/:id', getProductById);
+router.put('/products/:id', validate([ body('username').exists() ]), editProduct);
+router.delete('/products/:id', deleteProduct);
 
 router.post('/parties', validate([
 	body('username').exists(),

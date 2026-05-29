@@ -19,16 +19,28 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 const FRONTEND_DIR = path.resolve(__dirname, '../frontend/dist');
 app.use(express.static(FRONTEND_DIR));
 
+// Serve uploads
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // Import Route modules
 const authRoutes = require('./routes/authRoutes');
 const dbRoutes = require('./routes/dbRoutes');
 const superRoutes = require('./routes/superRoutes');
 
+
 // Mount REST APIs
 app.use('/api', authRoutes);
 app.use('/api', dbRoutes);
+// Admin APIs (delivery, barcode, etc.)
+app.use('/api/admin', require('./routes/deliveryRoutes'));
+app.use('/api/admin', require('./routes/reportRoutes'));
+// Offers and notifications admin APIs
+app.use('/api/admin/offers', require('./routes/offerRoutes'));
+app.use('/api/admin/notifications', require('./routes/notificationRoutes'));
 app.use('/api/super', superRoutes);
 app.use('/api/user/payments', require('./controllers/superController').getUserPayments);
+
+
 
 // Catch-all route to serve the SPA (React routing support)
 app.get('/login', (req, res) => {
@@ -47,7 +59,7 @@ async function init() {
     const db = await connectDB();
 
     // Create collections if they don't exist
-    const collectionsToCreate = ['products', 'sales', 'purchases', 'parties', 'transactions', 'settings', 'users', 'sa_plans', 'sa_payments', 'sa_config', 'sa_audit'];
+    const collectionsToCreate = ['products', 'sales', 'purchases', 'parties', 'transactions', 'settings', 'users', 'sa_plans', 'sa_payments', 'sa_config', 'sa_audit', 'deliveries', 'delivery_boys', 'barcodes', 'offers', 'driver_profiles', 'driver_deliveries'];
     const existingCollections = (await db.listCollections().toArray()).map(c => c.name);
 
     for (const name of collectionsToCreate) {
@@ -105,6 +117,15 @@ async function init() {
     app.listen(PORT, () => {
       console.log(`SERVER START: Vyapar Express Server running on http://localhost:${PORT}`);
     });
+
+    // Auto-reports cron skeleton (runs once a day at midnight)
+    setInterval(async () => {
+      const now = new Date();
+      if (now.getHours() === 0 && now.getMinutes() === 0) {
+        console.log('[CRON] Generating and emailing daily auto-reports...');
+        // Logic to aggregate reports and send via email service (e.g. SendGrid/Nodemailer)
+      }
+    }, 60 * 1000); // check every minute
 
   } catch (err) {
     console.error('SERVER FAILED TO START:', err);

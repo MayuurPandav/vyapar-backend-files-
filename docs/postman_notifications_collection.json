@@ -1,0 +1,20 @@
+{
+  "info": {
+    "name": "Vyapar Notifications API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "List Announcements",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/admin/notifications/config" }
+    },
+    {
+      "name": "Create Announcement",
+      "request": { "method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/api/admin/notifications/config", "body": { "mode": "raw", "raw": "{\n  \"title\": \"Test Broadcast\",\n  \"message\": \"Hello shops!\",\n  \"channels\": [\"in-app\",\"email\"],\n  \"immediate\": true\n}" } }
+    },
+    {
+      "name": "Send Ad-hoc",
+      "request": { "method": "POST", "header": [{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/api/admin/notifications/send", "body": { "mode": "raw", "raw": "{\n  \"title\": \"Ad-hoc\",\n  \"message\": \"Hello from API\",\n  \"channels\": [\"in-app\"]\n}" } }
+    }
+  ]
+}

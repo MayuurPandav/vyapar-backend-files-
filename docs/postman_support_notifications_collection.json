@@ -1,0 +1,12 @@
+{
+  "info": { "name": "Vyapar Support & Notifications", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+  "item": [
+    { "name": "Notifications - List Config", "request": { "method": "GET", "url": "{{baseUrl}}/api/admin/notifications/config" } },
+    { "name": "Notifications - Create Announcement", "request": { "method": "POST", "header":[{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/api/admin/notifications/config", "body": {"mode":"raw","raw":"{\n  \"title\": \"Broadcast\",\n  \"message\": \"Hello shops\",\n  \"channels\": [\"in-app\",\"email\"],\n  \"immediate\": true\n}" } } },
+    { "name": "Notifications - Send Adhoc", "request": { "method": "POST", "header":[{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/api/admin/notifications/send", "body": {"mode":"raw","raw":"{\n  \"title\": \"Adhoc\",\n  \"message\": \"Test\",\n  \"channels\": [\"in-app\"]\n}" } } },
+    { "name": "Support - Create Ticket", "request": { "method": "POST", "header":[{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/api/admin/support/tickets", "body": {"mode":"raw","raw":"{\n  \"title\": \"Billing issue\",\n  \"description\": \"Customer cannot pay\",\n  \"username\": \"shop1\",\n  \"category\": \"Billing Issue\",\n  \"priority\": \"high\"\n}" } } },
+    { "name": "Support - List Tickets", "request": { "method": "GET", "url": "{{baseUrl}}/api/admin/support/tickets" } },
+    { "name": "Support - Get Ticket", "request": { "method": "GET", "url": "{{baseUrl}}/api/admin/support/tickets/:id" } },
+    { "name": "Support - Add Comment", "request": { "method": "POST", "header":[{"key":"Content-Type","value":"application/json"}], "url": "{{baseUrl}}/api/admin/support/tickets/:id/comment", "body": {"mode":"raw","raw":"{\n  \"ticketId\": \":id\",\n  \"author\": \"agent1\",\n  \"message\": \"We are looking into this\"\n}" } } }
+  ]
+}

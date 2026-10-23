@@ -1,5 +1,8 @@
+require('dns').setDefaultResultOrder('ipv4first');
 const { MongoClient } = require('mongodb');
-require('dotenv').config();
+const path = require('path');
+// Ensure environment variables are loaded from repository/backend .env reliably
+require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/';
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'vyapar_db';

@@ -13,6 +13,12 @@ router.post('/deliveries/:id/assign', ctrl.assignDelivery);
 router.post('/deliveries/:id/proof', upload.single('file'), ctrl.uploadProof);
 router.post('/deliveries/:id/return', ctrl.markReturn);
 
+// Third-party delivery integrations
+router.post('/deliveries/:id/third-party/create', ctrl.createThirdPartyShipment);
+router.post('/deliveries/:id/third-party/cancel', ctrl.cancelThirdPartyShipment);
+router.get('/deliveries/:id/third-party/track', ctrl.trackThirdPartyShipment);
+router.get('/deliveries/:id/third-party/label', ctrl.generateThirdPartyLabel);
+
 // Delivery boys
 router.get('/delivery-boys', ctrl.listDeliveryBoys);
 router.post('/delivery-boys', ctrl.createDeliveryBoy);
@@ -20,7 +26,8 @@ router.post('/delivery-boys', ctrl.createDeliveryBoy);
 // Barcodes
 router.post('/barcodes/generate', ctrl.generateBarcode);
 router.get('/barcodes', ctrl.listBarcodes);
-router.get('/barcodes/:productId', ctrl.getBarcodeByProduct);
 router.get('/barcodes/pdf', ctrl.generateBarcodesPDF);
+router.get('/barcodes/render', ctrl.renderBarcodeImage);
+router.get('/barcodes/:productId', ctrl.getBarcodeByProduct);
 
 module.exports = router;

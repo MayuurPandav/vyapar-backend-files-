@@ -1,318 +1,760 @@
 const { getDB } = require('../config/db');
-const { ObjectId } = require('mongodb');
+const { parse } = require('json2csv');
 
-function toCSV(rows) {
-  if (!rows || !rows.length) return '';
-  const keys = Object.keys(rows[0]);
-  const lines = [keys.join(',')];
-  for (const r of rows) {
-    const vals = keys.map(k => { const v = r[k]==null? '': String(r[k]).replace(/"/g,'""'); return `"${v}"`; });
-    lines.push(vals.join(','));
+// Dynamically generate report data based on type
+async function generateReportData(db, type, startDate, endDate) {
+  const query = {};
+  if (startDate || endDate) {
+    query.createdAt = {};
+    if (startDate) query.createdAt.$gte = new Date(startDate);
+    if (endDate) query.createdAt.$lte = new Date(endDate);
   }
-  return lines.join('\n');
+
+  // Use 'date' instead of 'createdAt' for collections like sales
+  const dateQuery = {};
+  if (startDate || endDate) {
+    dateQuery.date = {};
+    if (startDate) dateQuery.date.$gte = startDate.includes('T') ? startDate.split('T')[0] : startDate;
+    if (endDate) dateQuery.date.$lte = endDate.includes('T') ? endDate.split('T')[0] : endDate;
+  }
+
+  switch (type) {
+    case 'shop_growth':
+      return await db.collection('users').find({ role: 'admin', ...query }).toArray();
+    case 'revenue':
+      return await db.collection('sa_payments').find({ ...query }).toArray();
+    case 'users':
+      return await db.collection('users').find({ ...query }).toArray();
+    case 'invoices':
+      return await db.collection('sales').find({ ...dateQuery }).toArray();
+    case 'purchases':
+      return await db.collection('purchases').find({ ...dateQuery }).toArray();
+    case 'inventory':
+      // Inventory usually doesn't filter by date created for current snapshot, 
+      // but we apply it if they want items created in that range.
+      return await db.collection('products').find({ ...query }).toArray();
+    case 'gst':
+      return await db.collection('sales').find({
+        ...dateQuery,
+        $or: [
+          { cgst: { $gt: 0 } },
+          { sgst: { $gt: 0 } },
+          { igst: { $gt: 0 } },
+          { totalTax: { $gt: 0 } },
+          { taxAmount: { $gt: 0 } }
+        ]
+      }).toArray();
+    case 'payments':
+      return await db.collection('transactions').find({
+        ...dateQuery,
+        type: { $in: ['Payment Receive', 'Sale'] }
+      }).toArray();
+    case 'expenses':
+      return await db.collection('expenses').find({ ...dateQuery }).toArray();
+    case 'deliveries':
+      return await db.collection('deliveries').find({ ...query }).toArray();
+    case 'offers':
+      return await db.collection('offers').find({ ...query }).toArray();
+    case 'support':
+      return await db.collection('sa_tickets').find({ ...query }).toArray();
+    default:
+      return [];
+  }
 }
 
-// Sales report: groupBy=day|product
+async function getReport(req, res) {
+  try {
+    const { type, startDate, endDate } = req.query;
+    if (!type) return res.status(400).json({ status: 'error', message: 'Report type is required' });
+
+    const db = getDB();
+    const data = await generateReportData(db, type, startDate, endDate);
+
+    // Aggregate some basic stats for the dashboard view
+    const stats = {
+      totalRecords: data.length,
+      generatedAt: new Date()
+    };
+
+    if (type === 'revenue' || type === 'invoices' || type === 'purchases') {
+      stats.totalValue = data.reduce((sum, item) => sum + (Number(item.total || item.amount || 0)), 0);
+    }
+
+    return res.json({ status: 'success', stats, sampleData: data.slice(0, 100) });
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: err.message });
+  }
+}
+
+async function exportReport(req, res) {
+  try {
+    const { type, startDate, endDate } = req.query;
+    if (!type) return res.status(400).json({ status: 'error', message: 'Report type is required' });
+
+    const db = getDB();
+    const data = await generateReportData(db, type, startDate, endDate);
+
+    if (!data.length) {
+      return res.status(404).json({ status: 'error', message: 'No data found for this report.' });
+    }
+
+    const fields = Object.keys(data[0]).filter(k => k !== '_id');
+    const csv = parse(data, { fields });
+
+    res.header('Content-Type', 'text/csv');
+    res.attachment(`report_${type}_${new Date().getTime()}.csv`);
+    return res.send(csv);
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: err.message });
+  }
+}
+
+// Auto report config
+async function saveReportConfig(req, res) {
+  try {
+    const db = getDB();
+    const payload = req.body;
+    await db.collection('sa_config').updateOne(
+      { type: 'auto_reports' },
+      { $set: { ...payload, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    return res.json({ status: 'success', message: 'Report schedule saved' });
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: err.message });
+  }
+}
+
+async function getReportConfig(req, res) {
+  try {
+    const db = getDB();
+    const config = await db.collection('sa_config').findOne({ type: 'auto_reports' });
+    return res.json({ status: 'success', data: config || {} });
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: err.message });
+  }
+}
+
+// ============== Legacy shop-level report stubs (used by reportRoutes.js) ==============
 async function salesReport(req, res) {
   try {
     const db = getDB();
-    const { from, to, groupBy } = req.query;
-    const match = {};
-    if (from || to) match.date = {};
-    if (from) match.date.$gte = from;
-    if (to) match.date.$lte = to;
+    const { username, startDate, endDate, from, to, groupBy } = req.query;
+    const query = {};
+    if (username) query.username = username;
+
+    const start = startDate || from;
+    const end = endDate || to;
+
+    if (start || end) {
+      query.date = {};
+      if (start) query.date.$gte = start.includes('T') ? start.split('T')[0] : start;
+      if (end) query.date.$lte = end.includes('T') ? end.split('T')[0] : end;
+    }
+
+    const sales = await db.collection('sales').find(query).toArray();
 
     if (groupBy === 'product') {
-      // unwind items and group by item name
-      const pipeline = [
-        { $match: match },
-        { $unwind: '$items' },
-        { $group: { _id: '$items.name', qty: { $sum: { $toDouble: '$items.qty' } }, revenue: { $sum: { $toDouble: '$items.amount' } } } },
-        { $project: { product: '$_id', qty: 1, revenue: 1, _id: 0 } },
-        { $sort: { revenue: -1 } }
-      ];
-      const rows = await db.collection('sales').aggregate(pipeline).toArray();
-      if (req.query.csv === 'true') {
-        const csv = toCSV(rows);
-        res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', `attachment; filename="sales_by_product.csv"`);
-        return res.send(csv);
-      }
-      return res.json(rows);
+      const productMap = {};
+      sales.forEach(sale => {
+        if (sale.items && Array.isArray(sale.items)) {
+          sale.items.forEach(item => {
+            const name = item.name || 'Unknown Product';
+            const revenue = Number(item.total || (item.qty * item.rate) || 0);
+            productMap[name] = (productMap[name] || 0) + revenue;
+          });
+        }
+      });
+      const data = Object.keys(productMap).map(name => ({
+        product: name,
+        revenue: productMap[name]
+      }));
+      res.json({ status: 'success', data });
+    } else {
+      // Default: sales by day, chronological
+      const dateMap = {};
+      sales.forEach(sale => {
+        const d = sale.date || 'Unknown Date';
+        const amount = Number(sale.amount || sale.total || 0);
+        dateMap[d] = (dateMap[d] || 0) + amount;
+      });
+      const data = Object.keys(dateMap).sort().map(d => ({
+        date: d,
+        total: dateMap[d]
+      }));
+      res.json({ status: 'success', data });
     }
-
-    // default: group by day
-    const pipeline = [
-      { $match: match },
-      { $group: { _id: '$date', total: { $sum: { $toDouble: '$amount' } }, count: { $sum: 1 } } },
-      { $project: { date: '$_id', total: 1, count: 1, _id: 0 } },
-      { $sort: { date: 1 } }
-    ];
-    const rows = await db.collection('sales').aggregate(pipeline).toArray();
-    if (req.query.csv === 'true') {
-      const csv = toCSV(rows);
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename="sales_by_day.csv"`);
-      return res.send(csv);
-    }
-    return res.json(rows);
-  } catch (err) {
-    console.error('salesReport', err);
-    return res.status(500).json({ status: 'error', message: err.message });
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
   }
 }
 
 async function inventoryLowStock(req, res) {
   try {
     const db = getDB();
-    const thresh = Number(req.query.threshold || 0);
-    const q = { $expr: { $lte: [ { $ifNull: ['$stock', 0] }, { $ifNull: ['$lowStockLevel', thresh || 5] } ] } };
-    const rows = await db.collection('products').find(q).project({ _id: 0 }).toArray();
-    if (req.query.csv === 'true') {
-      const csv = toCSV(rows);
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename="low_stock.csv"`);
-      return res.send(csv);
-    }
-    return res.json(rows);
-  } catch (err) {
-    console.error('inventoryLowStock', err);
-    return res.status(500).json({ status: 'error', message: err.message });
+    const { username } = req.query;
+    const q = username ? { username } : {};
+    const products = await db.collection('products').find(q).toArray();
+    const data = products.filter(p => Number(p.stock) <= (Number(p.lowStockLevel) || 10));
+    res.json({ status: 'success', data });
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
   }
 }
 
 async function deliveryReport(req, res) {
   try {
     const db = getDB();
-    const { from, to, status } = req.query;
-    const q = {};
-    if (status) q.status = status;
-    if (from || to) q.createdAt = {};
-    if (from) q.createdAt.$gte = from;
-    if (to) q.createdAt.$lte = to;
-    const rows = await db.collection('deliveries').find(q).sort({ createdAt: -1 }).toArray();
+    const { username, startDate, endDate, from, to } = req.query;
+    const q = username ? { username } : {};
+
+    const start = startDate || from;
+    const end = endDate || to;
+    if (start || end) {
+      q.createdAt = {};
+      if (start) q.createdAt.$gte = new Date(start);
+      if (end) q.createdAt.$lte = new Date(end);
+    }
+
+    const data = await db.collection('deliveries').find(q).sort({ createdAt: -1 }).limit(500).toArray();
+
     if (req.query.csv === 'true') {
-      const csv = toCSV(rows.map(r => ({ id: r._id, customer: (r.customer||{}).name || '', phone: (r.customer||{}).phone || '', status: r.status, date: r.createdAt })));
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename="delivery_report.csv"`);
+      if (!data.length) {
+        return res.status(404).send('No data found for this report.');
+      }
+      const csvData = data.map(d => ({
+        OrderID: d.orderId || '',
+        CustomerName: d.customer?.name || d.customerName || '',
+        CustomerPhone: d.customer?.phone || d.customerPhone || '',
+        DeliveryAddress: d.customer?.address || d.deliveryAddress || '',
+        Status: d.status || '',
+        PaymentType: d.paymentType || '',
+        BillAmount: d.billAmount || d.charges || 0,
+        TimeSlot: d.timeSlot || d.deliveryTimeSlot || '',
+        Partner: d.partner || 'in-house',
+        FailedReason: d.failedReason || '',
+        RescheduleSlot: d.rescheduleSlot || '',
+        ReturnReason: d.returnInfo?.reason || '',
+        CreatedAt: d.createdAt || ''
+      }));
+      const fields = Object.keys(csvData[0]);
+      const csv = parse(csvData, { fields });
+      res.header('Content-Type', 'text/csv');
+      res.attachment(`delivery_report_${new Date().getTime()}.csv`);
       return res.send(csv);
     }
-    return res.json(rows);
-  } catch (err) {
-    console.error('deliveryReport', err);
-    return res.status(500).json({ status: 'error', message: err.message });
+
+    res.json({ status: 'success', data });
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
   }
 }
 
-module.exports = {
-  salesReport,
-  inventoryLowStock,
-  deliveryReport
-};
-
-// Financial summary: totals for sales, purchases, transactions
 async function financialSummary(req, res) {
   try {
     const db = getDB();
-    const { from, to } = req.query;
-    const match = {};
-    if (from || to) match.date = {};
-    if (from) match.date.$gte = from;
-    if (to) match.date.$lte = to;
+    const { username, startDate, endDate, from, to } = req.query;
+    const query = {};
+    if (username) query.username = username;
 
-    const salesAgg = await db.collection('sales').aggregate([
-      { $match: match },
-      { $group: { _id: null, revenue: { $sum: { $toDouble: '$amount' } }, count: { $sum: 1 } } },
-      { $project: { _id: 0, revenue: 1, count: 1 } }
-    ]).toArray();
+    const start = startDate || from;
+    const end = endDate || to;
 
-    const purchasesAgg = await db.collection('purchases').aggregate([
-      { $match: match },
-      { $group: { _id: null, cost: { $sum: { $toDouble: '$amount' } }, count: { $sum: 1 } } },
-      { $project: { _id: 0, cost: 1, count: 1 } }
-    ]).toArray();
+    if (start || end) {
+      query.date = {};
+      if (start) query.date.$gte = start.includes('T') ? start.split('T')[0] : start;
+      if (end) query.date.$lte = end.includes('T') ? end.split('T')[0] : end;
+    }
 
-    const revenue = salesAgg[0]?.revenue || 0;
-    const cost = purchasesAgg[0]?.cost || 0;
+    const sales = await db.collection('sales').find(query).toArray();
+    const purchases = await db.collection('purchases').find(query).toArray();
+    const expenses = await db.collection('expenses').find(query).toArray();
+
+    const revenue = sales.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+    const purchaseCost = purchases.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    const expenseCost = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const cost = purchaseCost + expenseCost;
     const profit = revenue - cost;
 
-    const rows = [{ revenue, cost, profit }];
-    if (req.query.csv === 'true') {
-      const csv = toCSV(rows);
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename="financial_summary.csv"`);
-      return res.send(csv);
-    }
-    return res.json(rows[0]);
-  } catch (err) {
-    console.error('financialSummary', err);
-    return res.status(500).json({ status: 'error', message: err.message });
+    res.json({
+      status: 'success',
+      revenue,
+      cost,
+      profit,
+      income: revenue,
+      expense: cost
+    });
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
   }
 }
 
-// GST summary (best-effort): sums gst fields from sales and purchases
 async function gstSummary(req, res) {
   try {
     const db = getDB();
-    // try to aggregate by gstRate field in sales.items
-    const pipeline = [
-      { $unwind: '$items' },
-      { $group: { _id: '$items.gstRate', gstAmount: { $sum: { $toDouble: '$items.gstAmount' } }, taxable: { $sum: { $toDouble: '$items.amount' } } } },
-      { $project: { gstRate: '$_id', gstAmount: 1, taxable: 1, _id: 0 } },
-      { $sort: { gstRate: 1 } }
-    ];
-    const rows = await db.collection('sales').aggregate(pipeline).toArray();
-    if (req.query.csv === 'true') {
-      const csv = toCSV(rows);
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename="gst_summary.csv"`);
-      return res.send(csv);
+    const { username, startDate, endDate, from, to } = req.query;
+    const query = {};
+    if (username) query.username = username;
+
+    const start = startDate || from;
+    const end = endDate || to;
+    if (start || end) {
+      query.date = {};
+      if (start) query.date.$gte = start.includes('T') ? start.split('T')[0] : start;
+      if (end) query.date.$lte = end.includes('T') ? end.split('T')[0] : end;
     }
-    return res.json(rows);
-  } catch (err) {
-    console.error('gstSummary', err);
-    return res.status(500).json({ status: 'error', message: err.message });
+
+    const sales = await db.collection('sales').find(query).toArray();
+
+    const prodQuery = username ? { username } : {};
+    const products = await db.collection('products').find(prodQuery).toArray();
+    const productMap = {};
+    products.forEach(p => {
+      productMap[p.name] = {
+        taxSlab: p.taxSlab || '18%',
+        isTaxInclusive: p.isTaxInclusive === true
+      };
+    });
+
+    const gstMap = {};
+
+    sales.forEach(sale => {
+      if (sale.items && Array.isArray(sale.items)) {
+        sale.items.forEach(item => {
+          const prodDetails = productMap[item.name] || { taxSlab: '18%', isTaxInclusive: false };
+          const ratePct = parseFloat(prodDetails.taxSlab) || 18;
+          const rateStr = `${ratePct}%`;
+          const itemTotal = Number(item.total || (item.qty * item.rate) || 0);
+
+          let taxable = 0;
+          let gstAmount = 0;
+
+          if (prodDetails.isTaxInclusive) {
+            taxable = itemTotal / (1 + (ratePct / 100));
+            gstAmount = itemTotal - taxable;
+          } else {
+            taxable = itemTotal;
+            gstAmount = itemTotal * (ratePct / 100);
+          }
+
+          if (!gstMap[rateStr]) {
+            gstMap[rateStr] = { gstRate: rateStr, taxable: 0, gstAmount: 0 };
+          }
+          gstMap[rateStr].taxable += taxable;
+          gstMap[rateStr].gstAmount += gstAmount;
+        });
+      }
+    });
+
+    const data = Object.values(gstMap);
+    res.json({ status: 'success', data });
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
   }
 }
 
-// Ageing report for receivables (sales with outstanding)
 async function ageingReport(req, res) {
   try {
     const db = getDB();
-    const now = new Date();
-    const rows = await db.collection('sales').find({ $expr: { $gt: [ { $toDouble: { $ifNull: ['$outstanding', 0] } }, 0 ] } }).project({ _id: 1, customer: 1, amount: 1, outstanding: 1, date: 1 }).toArray();
-    const result = rows.map(r => {
-      const date = r.date ? new Date(r.date) : new Date(r._id.getTimestamp());
-      const days = Math.floor((now - date) / (1000*60*60*24));
-      return { id: r._id, customer: r.customer?.name || '', amount: r.amount || 0, outstanding: r.outstanding || 0, daysOverdue: days };
+    const { username } = req.query;
+    const q = username ? { username } : {};
+    const parties = await db.collection('parties').find(q).toArray();
+
+    const data = parties.map(p => {
+      let daysOverdue = 0;
+      if (p.lastTxn) {
+        const diffMs = new Date() - new Date(p.lastTxn);
+        daysOverdue = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+      } else {
+        daysOverdue = 15;
+      }
+      return {
+        customer: p.name,
+        amount: Math.abs(p.balance || 0),
+        outstanding: p.balance || 0,
+        daysOverdue: daysOverdue
+      };
     });
-    if (req.query.csv === 'true') {
-      const csv = toCSV(result);
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename="ageing_report.csv"`);
-      return res.send(csv);
-    }
-    return res.json(result);
-  } catch (err) {
-    console.error('ageingReport', err);
-    return res.status(500).json({ status: 'error', message: err.message });
+
+    res.json({ status: 'success', data });
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
   }
 }
 
-// Party ledger: combine transactions, sales, purchases for a party
 async function partyLedger(req, res) {
   try {
     const db = getDB();
-    const pid = req.query.partyId;
-    const match = pid ? { 'partyId': pid } : {};
-    const sales = await db.collection('sales').find(match).project({ _id: 1, date: 1, amount: 1, type: { $literal: 'sale' }, party: 1 }).toArray();
-    const purchases = await db.collection('purchases').find(match).project({ _id: 1, date: 1, amount: 1, type: { $literal: 'purchase' }, party: 1 }).toArray();
-    const transactions = await db.collection('transactions').find(match).project({ _id: 1, date: 1, amount: 1, type: 1, party: 1 }).toArray();
-    const combined = [...sales, ...purchases, ...transactions].map(r => ({ id: r._id, date: r.date || (r._id && r._id.getTimestamp && r._id.getTimestamp()), amount: r.amount || 0, type: r.type || 'txn' }));
-    combined.sort((a,b) => new Date(a.date) - new Date(b.date));
-    if (req.query.csv === 'true') {
-      const csv = toCSV(combined);
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename="party_ledger.csv"`);
-      return res.send(csv);
+    const { username, partyId } = req.query;
+    const query = {};
+    if (username) query.username = username;
+
+    if (partyId) {
+      const party = await db.collection('parties').findOne({
+        username,
+        $or: [
+          { id: partyId },
+          { name: partyId }
+        ]
+      });
+      if (party) {
+        query.party = party.name;
+      } else {
+        query.party = partyId;
+      }
     }
-    return res.json(combined);
-  } catch (err) {
-    console.error('partyLedger', err);
-    return res.status(500).json({ status: 'error', message: err.message });
+
+    const txns = await db.collection('transactions').find(query).sort({ date: -1 }).limit(500).toArray();
+
+    const data = txns.map(t => ({
+      ...t,
+      amount: t.credit || t.debit || 0
+    }));
+
+    res.json({ status: 'success', data });
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
   }
 }
 
-// export additions
-module.exports.financialSummary = financialSummary;
-module.exports.gstSummary = gstSummary;
-module.exports.ageingReport = ageingReport;
-module.exports.partyLedger = partyLedger;
-
-// --- New Reports (Feature 16) ---
 async function purchaseReport(req, res) {
   try {
     const db = getDB();
-    const { from, to, groupBy } = req.query;
-    const match = {};
-    if (from || to) match.date = {};
-    if (from) match.date.$gte = from;
-    if (to) match.date.$lte = to;
+    const { username, startDate, endDate, from, to, groupBy } = req.query;
+    const query = {};
+    if (username) query.username = username;
 
-    let pipeline = [];
+    const start = startDate || from;
+    const end = endDate || to;
+    if (start || end) {
+      query.date = {};
+      if (start) query.date.$gte = start.includes('T') ? start.split('T')[0] : start;
+      if (end) query.date.$lte = end.includes('T') ? end.split('T')[0] : end;
+    }
+
+    const purchases = await db.collection('purchases').find(query).toArray();
+
     if (groupBy === 'supplier') {
-      pipeline = [
-        { $match: match },
-        { $group: { _id: '$party.name', total: { $sum: { $toDouble: '$amount' } }, count: { $sum: 1 } } },
-        { $project: { supplier: '$_id', total: 1, count: 1, _id: 0 } },
-        { $sort: { total: -1 } }
-      ];
-    } else if (groupBy === 'month') {
-      pipeline = [
-        { $match: match },
-        { $group: { _id: { $substr: ['$date', 0, 7] }, total: { $sum: { $toDouble: '$amount' } } } },
-        { $project: { month: '$_id', total: 1, _id: 0 } },
-        { $sort: { month: 1 } }
-      ];
+      const supplierMap = {};
+      purchases.forEach(p => {
+        const sup = p.supplier || 'Unknown Supplier';
+        const amt = Number(p.amount || 0);
+        if (!supplierMap[sup]) {
+          supplierMap[sup] = { supplier: sup, total: 0, count: 0 };
+        }
+        supplierMap[sup].total += amt;
+        supplierMap[sup].count += 1;
+      });
+      const data = Object.values(supplierMap);
+      res.json({ status: 'success', data });
     } else {
-      pipeline = [
-        { $match: match },
-        { $sort: { date: -1 } }
-      ];
+      res.json({ status: 'success', data: purchases });
     }
-    const rows = await db.collection('purchases').aggregate(pipeline).toArray();
-    if (req.query.csv === 'true') {
-      const csv = toCSV(rows);
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename="purchase_report.csv"`);
-      return res.send(csv);
-    }
-    return res.json(rows);
-  } catch (err) {
-    console.error('purchaseReport', err);
-    return res.status(500).json({ status: 'error', message: err.message });
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
   }
 }
 
 async function inventoryAdvancedReport(req, res) {
   try {
     const db = getDB();
-    const { type } = req.query; // 'out_of_stock', 'dead_stock'
-    let q = {};
+    const { username, type } = req.query;
+    const q = username ? { username } : {};
+    const products = await db.collection('products').find(q).toArray();
+
     if (type === 'out_of_stock') {
-      q = { $expr: { $lte: [ { $toDouble: { $ifNull: ['$stock', 0] } }, 0 ] } };
+      const filtered = products.filter(p => Number(p.stock) <= (Number(p.lowStockLevel) || 5));
+      res.json({ status: 'success', data: filtered });
     } else if (type === 'dead_stock') {
-      // Find products that haven't been sold recently. We approximate by checking if there's any sale in last 90 days.
-      // For simplicity in a single query, we just return products with 0 total sales (if tracked) or a random subset as a stub.
-      // We will actually aggregate sales and find missing products.
-      const recentSales = await db.collection('sales').find({ date: { $gte: new Date(Date.now() - 90*24*60*60*1000).toISOString() } }).toArray();
-      const soldSkus = new Set();
-      recentSales.forEach(s => s.items && s.items.forEach(i => soldSkus.add(i.sku || i.name)));
-      const allProducts = await db.collection('products').find({}).toArray();
-      const rows = allProducts.filter(p => !soldSkus.has(p.sku) && !soldSkus.has(p.name));
-      if (req.query.csv === 'true') {
-        const csv = toCSV(rows);
-        res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', `attachment; filename="dead_stock.csv"`);
-        return res.send(csv);
-      }
-      return res.json(rows);
+      const saleQuery = username ? { username } : {};
+      const sales = await db.collection('sales').find(saleQuery).toArray();
+      const soldProductNames = new Set();
+      sales.forEach(s => {
+        if (s.items && Array.isArray(s.items)) {
+          s.items.forEach(item => {
+            if (item.name) soldProductNames.add(item.name);
+          });
+        }
+      });
+      const filtered = products.filter(p => !soldProductNames.has(p.name));
+      res.json({ status: 'success', data: filtered });
+    } else {
+      res.json({ status: 'success', data: products });
     }
-    
-    const rows = await db.collection('products').find(q).toArray();
-    if (req.query.csv === 'true') {
-      const csv = toCSV(rows);
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename="${type||'inventory'}.csv"`);
-      return res.send(csv);
-    }
-    return res.json(rows);
-  } catch (err) {
-    console.error('inventoryAdvancedReport', err);
-    return res.status(500).json({ status: 'error', message: err.message });
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
   }
 }
 
-module.exports.purchaseReport = purchaseReport;
-module.exports.inventoryAdvancedReport = inventoryAdvancedReport;
+// Custom Reports and automated emailing extensions
+const { sendEmail } = require('../utils/notifyAdapters');
 
+async function getReportSchedules(req, res) {
+  try {
+    const db = getDB();
+    const { username } = req.query;
+    const query = username ? { username } : {};
+    const schedules = await db.collection('report_schedules').find(query).toArray();
+    res.json({ status: 'success', data: schedules });
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
+  }
+}
+
+async function saveReportSchedule(req, res) {
+  try {
+    const db = getDB();
+    const { id, username, email, frequency, reportType, customConfig } = req.body;
+    
+    const doc = {
+      username,
+      email,
+      frequency,
+      reportType,
+      customConfig: customConfig || null,
+      updatedAt: new Date()
+    };
+    
+    if (id) {
+      const { ObjectId } = require('mongodb');
+      await db.collection('report_schedules').updateOne(
+        { _id: new ObjectId(id) },
+        { $set: doc }
+      );
+    } else {
+      doc.createdAt = new Date();
+      doc.lastSent = null;
+      await db.collection('report_schedules').insertOne(doc);
+    }
+    
+    res.json({ status: 'success', message: 'Report schedule saved' });
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
+  }
+}
+
+async function deleteReportSchedule(req, res) {
+  try {
+    const db = getDB();
+    const { id } = req.params;
+    const { ObjectId } = require('mongodb');
+    await db.collection('report_schedules').deleteOne({ _id: new ObjectId(id) });
+    res.json({ status: 'success', message: 'Report schedule deleted' });
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
+  }
+}
+
+async function getCustomReports(req, res) {
+  try {
+    const db = getDB();
+    const { username } = req.query;
+    const query = username ? { username } : {};
+    const reports = await db.collection('custom_reports').find(query).toArray();
+    res.json({ status: 'success', data: reports });
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
+  }
+}
+
+async function saveCustomReport(req, res) {
+  try {
+    const db = getDB();
+    const { id, username, name, entity, fields, filters, sortBy, sortOrder } = req.body;
+    
+    const doc = {
+      username,
+      name,
+      entity,
+      fields,
+      filters,
+      sortBy,
+      sortOrder,
+      updatedAt: new Date()
+    };
+    
+    if (id) {
+      const { ObjectId } = require('mongodb');
+      await db.collection('custom_reports').updateOne(
+        { _id: new ObjectId(id) },
+        { $set: doc }
+      );
+    } else {
+      doc.createdAt = new Date();
+      await db.collection('custom_reports').insertOne(doc);
+    }
+    
+    res.json({ status: 'success', message: 'Custom report template saved' });
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
+  }
+}
+
+async function deleteCustomReport(req, res) {
+  try {
+    const db = getDB();
+    const { id } = req.params;
+    const { ObjectId } = require('mongodb');
+    await db.collection('custom_reports').deleteOne({ _id: new ObjectId(id) });
+    res.json({ status: 'success', message: 'Custom report template deleted' });
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
+  }
+}
+
+async function triggerReportEmail(req, res) {
+  try {
+    const db = getDB();
+    const { id } = req.params;
+    const { ObjectId } = require('mongodb');
+    const schedule = await db.collection('report_schedules').findOne({ _id: new ObjectId(id) });
+    if (!schedule) return res.status(404).json({ status: 'error', message: 'Schedule not found' });
+    
+    await sendScheduledReportEmail(db, schedule);
+    res.json({ status: 'success', message: 'Report email sent successfully' });
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
+  }
+}
+
+async function sendScheduledReportEmail(db, schedule) {
+  const { username, email, reportType, customConfig, frequency } = schedule;
+  
+  let dataTitle = '';
+  let htmlBody = '';
+  
+  if (reportType === 'sales') {
+    dataTitle = 'Sales Invoice Report';
+    const sales = await db.collection('sales').find({ username }).toArray();
+    htmlBody = generateHtmlTable(dataTitle, sales.slice(0, 100), ['id', 'date', 'customer', 'amount', 'mode']);
+  } else if (reportType === 'purchases') {
+    dataTitle = 'Purchase PO Report';
+    const purchases = await db.collection('purchases').find({ username }).toArray();
+    htmlBody = generateHtmlTable(dataTitle, purchases.slice(0, 100), ['id', 'date', 'supplier', 'amount', 'mode']);
+  } else if (reportType === 'inventory') {
+    dataTitle = 'Inventory Status Report';
+    const products = await db.collection('products').find({ username }).toArray();
+    htmlBody = generateHtmlTable(dataTitle, products.slice(0, 100), ['name', 'sku', 'stock', 'price', 'purchasePrice']);
+  } else if (reportType === 'custom' && customConfig) {
+    dataTitle = `Custom Report: ${customConfig.name || 'Untitled'}`;
+    const entity = customConfig.entity || 'sales';
+    const rawData = await db.collection(entity).find({ username }).toArray();
+    let filtered = applyCustomFilters(rawData, customConfig.filters);
+    if (customConfig.sortBy) {
+      filtered.sort((a, b) => {
+        let valA = a[customConfig.sortBy];
+        let valB = b[customConfig.sortBy];
+        if (customConfig.sortOrder === 'desc') return valB > valA ? 1 : -1;
+        return valA > valB ? 1 : -1;
+      });
+    }
+    const fields = customConfig.fields || ['_id'];
+    htmlBody = generateHtmlTable(dataTitle, filtered.slice(0, 100), fields);
+  } else {
+    dataTitle = 'Financial Ledger Summary';
+    const sales = await db.collection('sales').find({ username }).toArray();
+    const purchases = await db.collection('purchases').find({ username }).toArray();
+    const revenue = sales.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+    const purchaseCost = purchases.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    htmlBody = `
+      <h3>Financial Ledger Summary</h3>
+      <p>Gross Sales: INR ${revenue}</p>
+      <p>Purchase Cost: INR ${purchaseCost}</p>
+      <p>Estimated Net Surplus: INR ${revenue - purchaseCost}</p>
+    `;
+  }
+  
+  const subject = `[Vypar Auto-Report] ${dataTitle} (${frequency.toUpperCase()})`;
+  const finalHtml = `
+    <html>
+      <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.5;">
+        <div style="background-color: #2563eb; color: #fff; padding: 15px; text-align: center; border-radius: 4px 4px 0 0;">
+          <h2 style="margin: 0;">Vypar Auto-Report</h2>
+        </div>
+        <div style="padding: 20px; border: 1px solid #ddd; border-top: none; border-radius: 0 0 4px 4px;">
+          <p>Hello,</p>
+          <p>This is your scheduled <strong>${frequency}</strong> email containing the latest snapshot of <strong>${dataTitle}</strong>.</p>
+          <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+          ${htmlBody}
+          <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+          <p style="font-size: 11px; color: #777;">This email was automatically generated and sent to you because you set up a report schedule. To manage your auto-reports, go to the <strong>Reports & AI Advisory</strong> tab in the Vypar Admin portal.</p>
+        </div>
+      </body>
+    </html>
+  `;
+  
+  await sendEmail(email, subject, finalHtml);
+  
+  await db.collection('report_schedules').updateOne(
+    { _id: schedule._id },
+    { $set: { lastSent: new Date() } }
+  );
+}
+
+function generateHtmlTable(title, rows, fields) {
+  let tableRows = rows.map(r => {
+    let cells = fields.map(f => `<td style="padding: 10px; border-bottom: 1px solid #eee; font-size: 13px;">${r[f] !== undefined ? r[f] : '-'}</td>`).join('');
+    return `<tr>${cells}</tr>`;
+  }).join('');
+  
+  let headerCells = fields.map(f => `<th style="padding: 12px; background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; text-align: left; font-size: 12px; font-weight: bold; color: #475569;">${f.toUpperCase()}</th>`).join('');
+  
+  return `
+    <h3 style="color: #1e293b; margin-top: 0; margin-bottom: 15px;">${title}</h3>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+      <thead>
+        <tr>${headerCells}</tr>
+      </thead>
+      <tbody>
+        ${tableRows || '<tr><td colspan="' + fields.length + '" style="padding: 15px; text-align: center; color: #94a3b8; font-size: 13px;">No matching records.</td></tr>'}
+      </tbody>
+    </table>
+  `;
+}
+
+function applyCustomFilters(data, filters) {
+  if (!filters || !Array.isArray(filters)) return data;
+  return data.filter(row => {
+    return filters.every(f => {
+      if (!f.field || !f.operator) return true;
+      const val = row[f.field];
+      const target = f.value;
+      if (val === undefined || val === null) return false;
+      
+      switch (f.operator) {
+        case 'equals': return String(val).toLowerCase() === String(target).toLowerCase();
+        case 'contains': return String(val).toLowerCase().includes(String(target).toLowerCase());
+        case 'gt': return Number(val) > Number(target);
+        case 'lt': return Number(val) < Number(target);
+        default: return true;
+      }
+    });
+  });
+}
+
+module.exports = {
+  // New platform-wide report functions (used by superRoutes.js)
+  getReport,
+  exportReport,
+  saveReportConfig,
+  getReportConfig,
+  // Legacy shop-level report functions (used by reportRoutes.js)
+  salesReport,
+  inventoryLowStock,
+  deliveryReport,
+  financialSummary,
+  gstSummary,
+  ageingReport,
+  partyLedger,
+  purchaseReport,
+  inventoryAdvancedReport,
+  // Custom Reports & Emailing
+  getReportSchedules,
+  saveReportSchedule,
+  deleteReportSchedule,
+  getCustomReports,
+  saveCustomReport,
+  deleteCustomReport,
+  triggerReportEmail,
+  sendScheduledReportEmail
+};

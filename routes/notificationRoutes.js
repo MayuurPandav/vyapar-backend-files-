@@ -1,6 +1,22 @@
 const express = require('express');
 const router = express.Router();
-const { getAlertsConfig, updateAlertsConfig, triggerExpiryReminders, sendNotification, ackRead, listTemplates, createTemplate, previewRecipients, getActiveAlerts, sendReminder, getMyNotifications } = require('../controllers/notificationController');
+const { 
+  getAlertsConfig, 
+  updateAlertsConfig, 
+  triggerExpiryReminders, 
+  sendNotification, 
+  ackRead, 
+  listTemplates, 
+  createTemplate, 
+  previewRecipients, 
+  getActiveAlerts, 
+  sendReminder, 
+  getMyNotifications,
+  sendInvoiceWhatsApp,
+  sendInvoiceSMS,
+  generateWhatsAppShareLink,
+  sendOTPEndpoint
+} = require('../controllers/notificationController');
 // prefer redis-based limiter when available
 let rateLimiter;
 try { rateLimiter = require('../middleware/redisRateLimiter'); } catch (e) { rateLimiter = require('../middleware/rateLimiter'); }
@@ -26,6 +42,12 @@ router.get('/dryruns', async (req, res) => {
 // Active alerts and notifications
 router.get('/active', getActiveAlerts);
 router.post('/remind', sendReminder);
+
+// Dedicated WhatsApp & SMS endpoints
+router.post('/whatsapp/send-invoice', sendInvoiceWhatsApp);
+router.post('/whatsapp/share-link', generateWhatsAppShareLink);
+router.post('/sms/send-invoice', sendInvoiceSMS);
+router.post('/sms/send-otp', sendOTPEndpoint);
 
 // templates
 router.get('/templates', listTemplates);

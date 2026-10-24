@@ -37,35 +37,40 @@ async function sendEmail(to, subject, html, attachments = []) {
   return res;
 }
 
-// SMS / WhatsApp placeholders — prefer Twilio if configured
-const TWILIO_SID = process.env.TWILIO_SID;
-const TWILIO_TOKEN = process.env.TWILIO_TOKEN;
-let twilioClient = null;
-if (TWILIO_SID && TWILIO_TOKEN) {
-  try { twilioClient = require('twilio')(TWILIO_SID, TWILIO_TOKEN); } catch (e) { twilioClient = null; }
+const communicationService = require('../services/communicationService');
+
+async function sendSMS(to, body, options = {}) {
+  try {
+    const res = await communicationService.sendSMS({ to, message: body, otp: options.otp });
+    if (res.dryrun) {
+      await logDryrun('sms', to, body);
+    }
+    return res;
+  } catch (err) {
+    console.error('[SMS-ADAPTER-ERROR]', err.message);
+    await logDryrun('sms-error', to, `${body} | Error: ${err.message}`);
+    return { ok: false, error: err.message };
+  }
 }
 
-async function sendSMS(to, body) {
-  if (!twilioClient) {
-    console.log('[SMS][DRYRUN] to=', to, 'body=', body);
-    await logDryrun('sms', to, body);
-    return { ok: true, dryrun: true };
+async function sendWhatsApp(to, body, options = {}) {
+  try {
+    const res = await communicationService.sendWhatsApp({
+      to,
+      text: body,
+      mediaUrl: options.mediaUrl,
+      mediaType: options.mediaType,
+      fileName: options.fileName
+    });
+    if (res.dryrun) {
+      await logDryrun('whatsapp', to, body);
+    }
+    return res;
+  } catch (err) {
+    console.error('[WHATSAPP-ADAPTER-ERROR]', err.message);
+    await logDryrun('whatsapp-error', to, `${body} | Error: ${err.message}`);
+    return { ok: false, error: err.message };
   }
-  const from = process.env.TWILIO_FROM || process.env.TWILIO_PHONE;
-  const msg = await twilioClient.messages.create({ body, from, to });
-  return msg;
-}
-
-async function sendWhatsApp(to, body) {
-  if (!twilioClient) {
-    console.log('[WHATSAPP][DRYRUN] to=', to, 'body=', body);
-    await logDryrun('whatsapp', to, body);
-    return { ok: true, dryrun: true };
-  }
-  const from = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:' + process.env.TWILIO_PHONE;
-  const toFmt = to.startsWith('whatsapp:') ? to : 'whatsapp:' + to;
-  const msg = await twilioClient.messages.create({ body, from, to: toFmt });
-  return msg;
 }
 
 async function sendInApp(username, title, message, meta) {

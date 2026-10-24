@@ -950,6 +950,66 @@ async function sendInvoiceEmailEndpoint(req, res) {
   }
 }
 
+async function initiateMaskedCallEndpoint(req, res) {
+  try {
+    const { fromAgent, toCustomer, agentName, customerName, orderId } = req.body;
+    if (!toCustomer) {
+      return res.status(400).json({ status: 'error', message: 'Customer phone number (toCustomer) is required' });
+    }
+
+    // Default caller number to verified Twilio caller if not supplied
+    const callerNumber = fromAgent || process.env.TWILIO_VERIFIED_PHONE || '+919322372105';
+
+    const voiceService = require('../services/voiceService');
+    const result = await voiceService.initiateMaskedCall({
+      fromAgent: callerNumber,
+      toCustomer,
+      agentName: agentName || 'Vyapar Staff',
+      customerName: customerName || 'Customer',
+      orderId
+    });
+
+    return res.json({
+      status: 'success',
+      message: result.dryrun ? 'Call bridge simulated' : 'Masked call bridge initiated',
+      result,
+      directDialUrl: result.directDialUrl
+    });
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: err.message });
+  }
+}
+
+async function sendVoiceReminderEndpoint(req, res) {
+  try {
+    const { phone, customerName, amount, invoiceNumber } = req.body;
+    if (!phone || !amount) {
+      return res.status(400).json({ status: 'error', message: 'Phone number and amount are required' });
+    }
+
+    const db = getDB();
+    const settings = await db.collection('settings').findOne({}) || {};
+    const businessName = settings.businessName || 'Vyapar Retail';
+
+    const voiceService = require('../services/voiceService');
+    const result = await voiceService.sendAutomatedVoiceReminder({
+      to: phone,
+      customerName: customerName || 'Valued Customer',
+      businessName,
+      amount,
+      invoiceNumber
+    });
+
+    return res.json({
+      status: 'success',
+      message: result.dryrun ? 'Voice reminder simulated' : 'Automated voice reminder dispatched',
+      result
+    });
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: err.message });
+  }
+}
+
 module.exports.getAlertsConfig = getAlertsConfig;
 module.exports.updateAlertsConfig = updateAlertsConfig;
 module.exports.triggerExpiryReminders = triggerExpiryReminders;
@@ -962,3 +1022,5 @@ module.exports.sendInvoiceSMS = sendInvoiceSMS;
 module.exports.generateWhatsAppShareLink = generateWhatsAppShareLink;
 module.exports.sendOTPEndpoint = sendOTPEndpoint;
 module.exports.sendInvoiceEmailEndpoint = sendInvoiceEmailEndpoint;
+module.exports.initiateMaskedCallEndpoint = initiateMaskedCallEndpoint;
+module.exports.sendVoiceReminderEndpoint = sendVoiceReminderEndpoint;

@@ -624,26 +624,11 @@ async function createThirdPartyShipment(req, res) {
         const updated = await db.collection('deliveries').findOne({ _id: doc._id });
         return res.json({ status: 'success', trackingId: result.awbCode, delivery: updated });
       } catch (err) {
-        console.error('Shiprocket order creation failed, falling back to mock:', err.message);
-        
-        // Fallback mock if credentials are not configured or request fails
-        const randNum = Math.floor(100000 + Math.random() * 900000);
-        const trackingId = `SR-${randNum}`;
-        const initialStatus = 'Manifested';
-
-        await db.collection('deliveries').updateOne(
-          { _id: doc._id },
-          { 
-            $set: { 
-              thirdPartyTrackingId: trackingId, 
-              status: initialStatus,
-              updatedAt: new Date().toISOString() 
-            } 
-          }
-        );
-
-        const updated = await db.collection('deliveries').findOne({ _id: doc._id });
-        return res.json({ status: 'success', trackingId, delivery: updated });
+        console.error('Shiprocket order creation failed:', err.message);
+        return res.status(400).json({ 
+          status: 'error', 
+          message: `Shiprocket dispatch failed: ${err.message}. Please configure valid Shiprocket credentials in Settings or assign an In-House Driver.` 
+        });
       }
     }
 
@@ -962,7 +947,7 @@ async function generateThirdPartyLabel(req, res) {
       xOffset += w + 2;
     });
 
-    const trackingNumber = doc.thirdPartyTrackingId || `${carrierName}-MOCK-999`;
+    const trackingNumber = doc.thirdPartyTrackingId || doc.orderId || 'PENDING-DISPATCH';
     pdf.fillColor('#000000').fontSize(10).font('Helvetica-Bold').text(trackingNumber, 18, 108, { align: 'center' });
     pdf.moveTo(10, 124).lineTo(278, 124).stroke();
 

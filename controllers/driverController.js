@@ -829,45 +829,11 @@ async function seedDeliveries(req, res, next) {
     }
 
     if (!realDeliveries.length) {
-      // Fallback demo data
-      const demoDeliveries = [
-        {
-          orderId: "ORD-1001",
-          customerName: "Amit Sharma",
-          customerPhone: "9876543210",
-          deliveryAddress: "MG Road Metro Station, Bengaluru, Karnataka",
-          items: ["Running shoes x1", "Socks pack x1"],
-          billAmount: 1499,
-          paymentType: "COD",
-          deliveryTimeSlot: "9 AM - 11 AM",
-          status: "Delivered",
-          paymentCollected: true,
-          amountCollected: 1499
-        },
-        {
-          orderId: "ORD-1002",
-          customerName: "Priya Nair",
-          customerPhone: "9988776655",
-          deliveryAddress: "12th Main Road, Indiranagar, Bengaluru, Karnataka",
-          items: ["Handbag x1"],
-          billAmount: 2399,
-          paymentType: "Prepaid",
-          deliveryTimeSlot: "11 AM - 1 PM",
-          status: "Out for delivery"
-        },
-        {
-          orderId: "ORD-1003",
-          customerName: "Vikram Rao",
-          customerPhone: "9123456780",
-          deliveryAddress: "ITPL Main Road, Whitefield, Bengaluru, Karnataka",
-          items: ["Laptop stand x1", "Mouse pad x1"],
-          billAmount: 899,
-          paymentType: "COD",
-          deliveryTimeSlot: "1 PM - 3 PM",
-          status: "Assigned"
-        }
-      ];
-      realDeliveries = demoDeliveries;
+      return res.json({
+        message: "No pending customer delivery orders found in database to sync.",
+        seededCount: 0,
+        deliveries: []
+      });
     }
 
     const seedData = realDeliveries.map((delivery) => ({

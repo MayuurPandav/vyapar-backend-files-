@@ -24,19 +24,7 @@ async function createRazorpayOrder({ amount, currency = 'INR', receipt, notes = 
   const keySecret = process.env.RAZORPAY_KEY_SECRET;
 
   if (!keyId || !keySecret) {
-    // If keys are missing, return a structured fallback object for testing without crashing
-    console.warn('[PAYMENT GATEWAY WARNING] Razorpay Key ID or Secret not set in process.env. Returning fallback order.');
-    return {
-      id: `order_mock_${Date.now()}`,
-      entity: 'order',
-      amount: Math.round(amount * 100),
-      amount_paid: 0,
-      amount_due: Math.round(amount * 100),
-      currency,
-      receipt: receipt || `rcpt_${Date.now()}`,
-      status: 'created',
-      keyId: 'rzp_test_fallback'
-    };
+    throw new Error('Razorpay Gateway is not configured. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env, or use Dynamic UPI QR Code.');
   }
 
   const authHeader = 'Basic ' + Buffer.from(`${keyId}:${keySecret}`).toString('base64');

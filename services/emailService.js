@@ -138,10 +138,7 @@ async function sendEmail({ to, subject, html, text = '', attachments = [], fromN
     }
   }
 
-  // 3. Dry-run Mode
-  console.log(`[EMAIL-DRYRUN] to: ${to} | subject: ${subject} | attachments: ${attachments.length}`);
-  await logEmailAttempt({ to, subject, html, attachments, status: 'dryrun', isDryRun: true });
-  return { ok: true, dryrun: true, provider: 'dryrun' };
+  throw new Error('Email service credentials are not configured in .env. Please set SENDGRID_API_KEY or SMTP_HOST.');
 }
 
 /**

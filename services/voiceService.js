@@ -55,23 +55,7 @@ async function initiateMaskedCall({ fromAgent, toCustomer, agentName = 'Driver',
   const cleanCustomerPhone = normalizePhone(toCustomer);
 
   if (!sid || !token || !twilioNumber) {
-    console.log(`[VOICE-CALL-DRYRUN] Masked bridge from ${cleanAgentPhone} (${agentName}) to ${cleanCustomerPhone} (${customerName})`);
-    await logVoiceAttempt({
-      type: 'masked_bridge',
-      from: cleanAgentPhone,
-      to: cleanCustomerPhone,
-      callSid: `mock_call_${Date.now()}`,
-      status: 'dryrun',
-      isDryRun: true,
-      meta: { agentName, customerName, orderId }
-    });
-    return {
-      ok: true,
-      dryrun: true,
-      message: 'Call bridge simulated (Twilio credentials missing)',
-      callSid: `mock_call_${Date.now()}`,
-      directDialUrl: `tel:${cleanCustomerPhone}`
-    };
+    throw new Error('Twilio Voice credentials are not configured in .env. Please set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM.');
   }
 
   const twilio = require('twilio')(sid, token);
@@ -123,22 +107,7 @@ async function sendAutomatedVoiceReminder({ to, customerName = 'Customer', busin
   const cleanTo = normalizePhone(to);
 
   if (!sid || !token || !twilioNumber) {
-    console.log(`[VOICE-IVR-DRYRUN] Reminder call to ${cleanTo} (${customerName}) for INR ${amount}`);
-    await logVoiceAttempt({
-      type: 'ivr_reminder',
-      from: twilioNumber || 'dryrun',
-      to: cleanTo,
-      callSid: `mock_ivr_${Date.now()}`,
-      status: 'dryrun',
-      isDryRun: true,
-      meta: { customerName, businessName, amount, invoiceNumber }
-    });
-    return {
-      ok: true,
-      dryrun: true,
-      message: 'Automated voice reminder simulated',
-      callSid: `mock_ivr_${Date.now()}`
-    };
+    throw new Error('Twilio Voice credentials are not configured in .env. Please set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM.');
   }
 
   const twilio = require('twilio')(sid, token);

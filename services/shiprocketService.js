@@ -239,7 +239,7 @@ async function createShiprocketOrder(delivery) {
   return {
     shiprocketOrderId,
     shipmentId,
-    awbCode: awbCode || `SR-${Math.floor(100000 + Math.random() * 900000)}` // fallback mock if assign/awb fails
+    awbCode: awbCode || null
   };
 }
 

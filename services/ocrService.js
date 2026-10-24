@@ -122,27 +122,7 @@ async function scanReceiptImage(imageBuffer, mimeType = 'image/jpeg') {
     }
   }
 
-  // 2. Intelligent Built-in Parser with realistic simulated demo scan
-  // Generates structured extracted fields for testing immediately without paid API keys
-  const demoParsed = {
-    vendorName: 'Hindustan Retail & Wholesale Depot',
-    invoiceNumber: `INV-${Date.now().toString().slice(-6)}`,
-    date: new Date().toISOString().slice(0, 10),
-    items: [
-      { name: 'Fortune Sunlite Refined Oil 1L', quantity: 12, price: 135.00, amount: 1620.00 },
-      { name: 'India Gate Basmati Rice 5kg', quantity: 4, price: 450.00, amount: 1800.00 },
-      { name: 'Maggi 2-Minute Noodles 12-Pack', quantity: 6, price: 168.00, amount: 1008.00 }
-    ],
-    subTotal: 4428.00,
-    tax: 221.40,
-    totalAmount: 4649.40
-  };
-
-  return {
-    success: true,
-    provider: 'Vyapar Smart OCR',
-    data: demoParsed
-  };
+  throw new Error('AI Vision OCR requires an OPENAI_API_KEY in .env. Please set OPENAI_API_KEY to extract live invoice text from photos.');
 }
 
 module.exports = {

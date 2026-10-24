@@ -239,15 +239,7 @@ async function sendWhatsApp({ to, text, mediaUrl = null, mediaType = 'document',
     }
   }
 
-  // Dry-run fallback if no third-party WhatsApp provider is configured
-  console.log(`[WHATSAPP-DRYRUN] Recipient: +${cleanPhone}\nMessage:\n${text}`);
-  await logNotificationAttempt({ channel: 'whatsapp', provider: 'dryrun', to: cleanPhone, payload: { text, mediaUrl }, status: 'dryrun', isDryRun: true });
-  return {
-    ok: true,
-    dryrun: true,
-    provider: 'dryrun',
-    deepLink: generateWhatsAppDeepLink({ phone: cleanPhone, text })
-  };
+  throw new Error('WhatsApp service credentials are not configured in .env. Please configure Twilio or Meta WhatsApp.');
 }
 
 /**
@@ -349,14 +341,7 @@ async function sendSMS({ to, message, otp = null }) {
     }
   }
 
-  // Dry-run fallback
-  console.log(`[SMS-DRYRUN] Recipient: +${cleanPhone}\nMessage: ${message}`);
-  await logNotificationAttempt({ channel: 'sms', provider: 'dryrun', to: cleanPhone, payload: { message, otp }, status: 'dryrun', isDryRun: true });
-  return {
-    ok: true,
-    dryrun: true,
-    provider: 'dryrun'
-  };
+  throw new Error('SMS service credentials are not configured in .env. Please configure Twilio or Fast2SMS.');
 }
 
 module.exports = {

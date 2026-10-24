@@ -189,8 +189,8 @@ async function sendTwilioWhatsApp({ to, text, mediaUrl = null }) {
 
   const twilio = require('twilio')(sid, token);
   const cleanPhone = normalizePhoneNumber(to);
-  const from = process.env.TWILIO_WHATSAPP_FROM || `whatsapp:${process.env.TWILIO_PHONE || process.env.TWILIO_FROM}`;
-  const toFmt = `whatsapp:+${cleanPhone}`;
+  const from = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
+  const toFmt = to.startsWith('whatsapp:') ? to : `whatsapp:+${cleanPhone}`;
 
   const messageOptions = {
     body: text,

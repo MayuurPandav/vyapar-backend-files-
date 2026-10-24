@@ -968,13 +968,33 @@ async function getPublicOrderTracking(req, res, next) {
     // Customer location
     const customerLocation = { lat: 12.9352, lng: 77.6245, name: delivery.deliveryAddress || "Customer Address" };
 
-    // Simulated driver position between store and customer based on status
+    // Simulated or live driver position
     let driverLocation = { ...storeLocation };
-    if (delivery.status === "Out for delivery") {
+    let isLiveGps = false;
+
+    if (delivery.currentLocation && typeof delivery.currentLocation.lat === 'number') {
+      driverLocation = delivery.currentLocation;
+      isLiveGps = true;
+    } else if (driver && driver.currentLocation && typeof driver.currentLocation.lat === 'number') {
+      driverLocation = driver.currentLocation;
+      isLiveGps = true;
+    } else if (delivery.status === "Out for delivery") {
       driverLocation = { lat: 12.9534, lng: 77.6095 }; // mid-way live marker
     } else if (delivery.status === "Delivered") {
       driverLocation = { ...customerLocation };
     }
+
+    // Calculate real distance & dynamic ETA
+    const dLat = (customerLocation.lat - driverLocation.lat) * Math.PI / 180;
+    const dLon = (customerLocation.lng - driverLocation.lng) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(driverLocation.lat * Math.PI / 180) * Math.cos(customerLocation.lat * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distanceKm = Number((6371 * c).toFixed(2));
+    const etaMinutes = delivery.status === 'Delivered'
+      ? 0
+      : Math.max(2, Math.round((distanceKm / 25) * 60 + 3));
 
     res.json({
       orderId: delivery.orderId,
@@ -991,6 +1011,9 @@ async function getPublicOrderTracking(req, res, next) {
       proofPhotoUrl: delivery.proofPhotoUrl || "",
       notes: delivery.notes || "",
       updatedAt: delivery.updatedAt,
+      distanceKm,
+      etaMinutes,
+      isLiveGps,
       driver: driver ? {
         fullName: driver.fullName,
         phone: driver.phone,
@@ -1004,6 +1027,61 @@ async function getPublicOrderTracking(req, res, next) {
         customer: customerLocation,
         driver: driverLocation
       }
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Live Driver GPS Location update
+async function updateDriverLocation(req, res, next) {
+  try {
+    const db = getDB();
+    const { lat, lng, speed, heading, accuracy, orderId } = req.body;
+    if (lat === undefined || lng === undefined) {
+      return res.status(400).json({ message: "Latitude and Longitude are required" });
+    }
+
+    const locData = {
+      lat: Number(lat),
+      lng: Number(lng),
+      speed: Number(speed) || 0,
+      heading: Number(heading) || 0,
+      accuracy: Number(accuracy) || 10,
+      updatedAt: new Date()
+    };
+
+    const driverId = req.driver?._id;
+    if (driverId) {
+      await db.collection('driver_profiles').updateOne(
+        { _id: new ObjectId(driverId) },
+        { $set: { currentLocation: locData, lastActiveAt: new Date() } }
+      );
+    }
+
+    // Update active deliveries for this driver
+    const deliveryQuery = {};
+    if (orderId) {
+      deliveryQuery.orderId = orderId;
+    } else if (driverId) {
+      deliveryQuery.$or = [
+        { assignedDriver: driverId.toString() },
+        { assignedDriver: new ObjectId(driverId) }
+      ];
+      deliveryQuery.status = { $in: ['Out for delivery', 'Picked Up', 'Assigned'] };
+    }
+
+    if (Object.keys(deliveryQuery).length > 0) {
+      await db.collection('deliveries').updateMany(
+        deliveryQuery,
+        { $set: { currentLocation: locData, lastLocationUpdate: new Date() } }
+      );
+    }
+
+    return res.json({
+      status: "success",
+      message: "Driver coordinates updated successfully",
+      location: locData
     });
   } catch (error) {
     next(error);
@@ -1035,5 +1113,6 @@ module.exports = {
   getMapProvider,
   searchMap,
   getNavigationUrl,
-  getPublicOrderTracking
+  getPublicOrderTracking,
+  updateDriverLocation
 };

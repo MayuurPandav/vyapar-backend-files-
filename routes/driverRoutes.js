@@ -93,6 +93,9 @@ router.patch('/deliveries/:id/payment', ctrl.driverAuthMiddleware, ctrl.collectP
 router.post('/deliveries/:id/proof', ctrl.driverAuthMiddleware, uploadProof.single('proofPhoto'), ctrl.uploadProofPhoto);
 router.post('/deliveries/:id/return', ctrl.driverAuthMiddleware, ctrl.initiateReturn);
 
+// Live GPS Driver Streaming
+router.post('/location/update', ctrl.driverAuthMiddleware, ctrl.updateDriverLocation);
+
 // Seeding endpoint
 router.post('/seed', ctrl.driverAuthMiddleware, ctrl.seedDeliveries);
 

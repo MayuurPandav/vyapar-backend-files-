@@ -93,6 +93,19 @@ router.post('/products/:id/transfer', transferStock);
 // Purchase report
 router.get('/purchase-report', purchaseReport);
 
+// Barcode auto-lookup route
+router.get('/barcodes/lookup/:barcode', async (req, res) => {
+  try {
+    const { barcode } = req.params;
+    const { username } = req.query;
+    const { lookupBarcode } = require('../services/barcodeService');
+    const result = await lookupBarcode(barcode, username);
+    return res.json({ status: 'success', ...result });
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
 // File Upload Support for Staff Profile Photos and ID Proofs
 const multer = require('multer');
 const path = require('path');
@@ -121,6 +134,22 @@ router.post('/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ status: 'error', message: 'No file uploaded' });
   const fileUrl = `/uploads/${req.file.filename}`;
   return res.json({ status: 'success', fileUrl });
+});
+
+// AI Smart Receipt & Bill OCR Endpoint
+router.post('/invoices/scan-receipt', upload.single('receipt'), async (req, res) => {
+  try {
+    const file = req.file || (req.files && req.files[0]);
+    if (!file) {
+      return res.status(400).json({ status: 'error', message: 'No receipt or invoice image provided' });
+    }
+    const { scanReceiptImage } = require('../services/ocrService');
+    const imageBuffer = fs.readFileSync(file.path);
+    const result = await scanReceiptImage(imageBuffer, file.mimetype);
+    return res.json({ status: 'success', ...result });
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: err.message });
+  }
 });
 
 const {

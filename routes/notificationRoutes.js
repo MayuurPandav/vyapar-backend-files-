@@ -15,7 +15,8 @@ const {
   sendInvoiceWhatsApp,
   sendInvoiceSMS,
   generateWhatsAppShareLink,
-  sendOTPEndpoint
+  sendOTPEndpoint,
+  sendInvoiceEmailEndpoint
 } = require('../controllers/notificationController');
 // prefer redis-based limiter when available
 let rateLimiter;
@@ -43,11 +44,12 @@ router.get('/dryruns', async (req, res) => {
 router.get('/active', getActiveAlerts);
 router.post('/remind', sendReminder);
 
-// Dedicated WhatsApp & SMS endpoints
+// Dedicated WhatsApp, SMS & Email endpoints
 router.post('/whatsapp/send-invoice', sendInvoiceWhatsApp);
 router.post('/whatsapp/share-link', generateWhatsAppShareLink);
 router.post('/sms/send-invoice', sendInvoiceSMS);
 router.post('/sms/send-otp', sendOTPEndpoint);
+router.post('/email/send-invoice', sendInvoiceEmailEndpoint);
 
 // templates
 router.get('/templates', listTemplates);

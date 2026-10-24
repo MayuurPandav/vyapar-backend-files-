@@ -883,6 +883,73 @@ async function sendOTPEndpoint(req, res) {
   }
 }
 
+async function sendInvoiceEmailEndpoint(req, res) {
+  try {
+    const { invoiceId, email, customNote } = req.body;
+    if (!email) return res.status(400).json({ status: 'error', message: 'Recipient email is required' });
+
+    const db = getDB();
+    let invoice = null;
+    if (invoiceId) {
+      if (ObjectId.isValid(invoiceId)) {
+        invoice = await db.collection('invoices').findOne({ _id: new ObjectId(invoiceId) });
+      }
+      if (!invoice) {
+        invoice = await db.collection('invoices').findOne({ $or: [{ id: invoiceId }, { invoiceNumber: invoiceId }] });
+      }
+    } else if (req.body.invoice) {
+      invoice = req.body.invoice;
+    }
+
+    if (!invoice) return res.status(404).json({ status: 'error', message: 'Invoice not found' });
+
+    const settings = await db.collection('settings').findOne({}) || {};
+    const business = {
+      name: settings.businessName || 'Vyapar Retail',
+      phone: settings.phone || '',
+      email: settings.email || 'support@vyapar.com',
+      gstin: settings.gstin || '27AABCU9603R1ZV',
+      address: settings.address || ''
+    };
+
+    let upiPaymentLink = null;
+    const vpa = settings.upiId || settings.vpa;
+    const dueAmt = invoice.balanceDue ?? (invoice.totalAmount - (invoice.paidAmount || 0));
+    if (vpa && dueAmt > 0) {
+      try {
+        const { generateUPIString } = require('../services/paymentService');
+        upiPaymentLink = generateUPIString({
+          vpa,
+          merchantName: business.name,
+          amount: dueAmt,
+          invoiceId: invoice.invoiceNumber || invoiceId,
+          note: `Bill #${invoice.invoiceNumber || invoiceId}`
+        });
+      } catch (e) {
+        console.warn('UPI link error in email:', e.message);
+      }
+    }
+
+    const emailService = require('../services/emailService');
+    const result = await emailService.sendInvoiceEmail({
+      to: email,
+      invoice,
+      business,
+      customer: { name: invoice.customerName || invoice.customer || '' },
+      customMessage: customNote,
+      upiPaymentLink
+    });
+
+    return res.json({
+      status: 'success',
+      message: result.dryrun ? 'Dry-run invoice email logged' : 'Invoice email with PDF sent successfully',
+      result
+    });
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: err.message });
+  }
+}
+
 module.exports.getAlertsConfig = getAlertsConfig;
 module.exports.updateAlertsConfig = updateAlertsConfig;
 module.exports.triggerExpiryReminders = triggerExpiryReminders;
@@ -894,3 +961,4 @@ module.exports.sendInvoiceWhatsApp = sendInvoiceWhatsApp;
 module.exports.sendInvoiceSMS = sendInvoiceSMS;
 module.exports.generateWhatsAppShareLink = generateWhatsAppShareLink;
 module.exports.sendOTPEndpoint = sendOTPEndpoint;
+module.exports.sendInvoiceEmailEndpoint = sendInvoiceEmailEndpoint;

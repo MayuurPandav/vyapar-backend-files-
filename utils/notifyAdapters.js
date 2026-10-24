@@ -27,17 +27,28 @@ async function logDryrun(type, to, subjectOrBody, bodyOrEmpty = '') {
   }
 }
 
-async function sendEmail(to, subject, html, attachments = []) {
-  if (!mailer) {
-    console.log('[EMAIL][DRYRUN] to=', to, 'subject=', subject, 'attachments=', attachments.map(a => a.filename));
-    await logDryrun('email', to, subject, html);
-    return { ok: true, dryrun: true };
-  }
-  const res = await mailer.sendMail({ from: process.env.SMTP_FROM || process.env.SMTP_USER, to, subject, html, attachments });
-  return res;
-}
-
+const emailService = require('../services/emailService');
 const communicationService = require('../services/communicationService');
+
+async function sendEmail(to, subject, html, attachments = [], options = {}) {
+  try {
+    const res = await emailService.sendEmail({
+      to,
+      subject,
+      html,
+      attachments,
+      fromName: options.fromName
+    });
+    if (res.dryrun) {
+      await logDryrun('email', to, subject, html);
+    }
+    return res;
+  } catch (err) {
+    console.error('[EMAIL-ADAPTER-ERROR]', err.message);
+    await logDryrun('email-error', to, subject, `Error: ${err.message}`);
+    return { ok: false, error: err.message };
+  }
+}
 
 async function sendSMS(to, body, options = {}) {
   try {

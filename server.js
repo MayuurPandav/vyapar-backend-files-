@@ -93,13 +93,16 @@ app.use('/api/user/payments', require('./controllers/superController').getUserPa
 
 // Direct download route for the official presentation deck
 const handleDownloadPPTX = (req, res) => {
-  const pptxPath = path.resolve(__dirname, '../Vyapar_2.0_Presentation.pptx');
-  if (fs.existsSync(pptxPath)) {
-    return res.download(pptxPath, 'Vyapar_2.0_Presentation.pptx');
-  }
-  const altPath = path.resolve(__dirname, '../frontend/public/Vyapar_2.0_Presentation.pptx');
-  if (fs.existsSync(altPath)) {
-    return res.download(altPath, 'Vyapar_2.0_Presentation.pptx');
+  const pptxNames = ['Vyapar_2.0_Official_Presentation.pptx', 'Vyapar_2.0_Presentation.pptx'];
+  for (const name of pptxNames) {
+    const rootPath = path.resolve(__dirname, '..', name);
+    if (fs.existsSync(rootPath)) {
+      return res.download(rootPath, name);
+    }
+    const pubPath = path.resolve(__dirname, '../frontend/public', name);
+    if (fs.existsSync(pubPath)) {
+      return res.download(pubPath, name);
+    }
   }
   return res.status(404).send('Presentation file not found');
 };

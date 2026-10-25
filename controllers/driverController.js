@@ -499,7 +499,14 @@ async function updateDeliveryStatus(req, res, next) {
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({ message: "Invalid delivery id" });
     }
-    const delivery = await db.collection('deliveries').findOne({ _id: new ObjectId(id), assignedDriver: req.driver._id.toString() });
+    const driverId = (req.driver?._id || '').toString();
+    const empId = req.driver?.employeeId || '';
+    const driverMatchQuery = [{ assignedDriver: driverId }, { assignedDriver: empId }, { assignedTo: empId }, { assignedTo: driverId }];
+    if (ObjectId.isValid(driverId)) driverMatchQuery.push({ assignedDriver: new ObjectId(driverId) });
+    const delivery = await db.collection('deliveries').findOne({
+      _id: new ObjectId(id),
+      $or: driverMatchQuery
+    });
     if (!delivery) {
       return res.status(404).json({ message: "Delivery not found or not assigned to you" });
     }

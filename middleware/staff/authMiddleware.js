@@ -14,6 +14,31 @@ const protect = asyncHandler(async (req, res, next) => {
       req.user = await User.findById(decoded.id).select('-password');
       
       if (!req.user) {
+        // Fallback to native users collection
+        const { getDB } = require('../../config/db');
+        const { ObjectId } = require('mongodb');
+        const db = getDB();
+        if (ObjectId.isValid(decoded.id)) {
+          const u = await db.collection('users').findOne({ _id: new ObjectId(decoded.id) });
+          if (u) {
+            req.user = {
+              _id: u._id,
+              name: u.name || u.username,
+              email: u.username,
+              role: u.role || 'staff',
+              isActive: u.accountStatus !== 'deactivated',
+              permissions: {
+                canEditInventory: true,
+                canAcceptPayment: true,
+                canViewAllInvoices: true,
+                canEditRate: true
+              }
+            };
+          }
+        }
+      }
+
+      if (!req.user) {
         return res.status(401).json({ status: 'error', message: 'Not authorized, user not found' });
       }
 

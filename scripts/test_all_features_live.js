@@ -372,6 +372,117 @@ async function runFeatureTests() {
   } catch (e) {
     assert(false, 'Super Admin Control', e.message);
   }
+  // -------------------------------------------------------------------------
+  // FEATURE 16: Cashier / POS Billing Counter Portal
+  // -------------------------------------------------------------------------
+  console.log('\n👉 [FEATURE 16] Cashier / POS Billing Counter Portal');
+  try {
+    const resCashierLogin = await fetch(`${BASE_URL}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'cashier@vyapar.com', password: 'cashier123' })
+    });
+    const cashierData = await resCashierLogin.json();
+    assert(resCashierLogin.ok && cashierData.token, 'Cashier POS authentication');
+    assert(cashierData.user && (cashierData.user.role === 'cashier' || cashierData.user.role === 'staff'), 'Cashier role verified');
+
+    const cashierHeaders = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${cashierData.token}`
+    };
+
+    // Cashier products query
+    const resCashierProds = await fetch(`${BASE_URL}/api/staff/products`, { headers: cashierHeaders });
+    assert(resCashierProds.ok || resCashierProds.status === 200, 'Cashier fetch POS catalog products');
+  } catch (e) {
+    assert(false, 'Cashier POS Counter', e.message);
+  }
+
+  // -------------------------------------------------------------------------
+  // FEATURE 17: Driver Live Delivery Partner App & GPS Telematics
+  // -------------------------------------------------------------------------
+  console.log('\n👉 [FEATURE 17] Delivery Driver App & Live Telematics');
+  try {
+    const resDriverLogin = await fetch(`${BASE_URL}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'DP-1001', password: 'pass123' })
+    });
+    const driverData = await resDriverLogin.json();
+    assert(resDriverLogin.ok && driverData.token, 'Driver DP-1001 authentication');
+    assert(driverData.user && (driverData.user.role === 'deliveryboy' || driverData.user.role === 'delivery_boy'), 'Driver role verified');
+
+    const driverHeaders = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${driverData.token}`
+    };
+
+    // Driver dashboard
+    const resDriverDash = await fetch(`${BASE_URL}/api/driver/dashboard`, { headers: driverHeaders });
+    assert(resDriverDash.ok, 'Driver dashboard statistics and task list');
+
+    // Live GPS telemetry stream
+    const resGps = await fetch(`${BASE_URL}/api/location/update`, {
+      method: 'POST',
+      headers: driverHeaders,
+      body: JSON.stringify({
+        latitude: 19.0760,
+        longitude: 72.8777,
+        speed: 32.5,
+        heading: 180,
+        accuracy: 5
+      })
+    });
+    assert(resGps.ok || resGps.status === 200, 'Driver live GPS coordinate stream');
+  } catch (e) {
+    assert(false, 'Driver Live App', e.message);
+  }
+
+  // -------------------------------------------------------------------------
+  // FEATURE 18: Head Accountant Portal & Double-Entry Ledgers
+  // -------------------------------------------------------------------------
+  console.log('\n👉 [FEATURE 18] Head Accountant Portal & Ledger Statements');
+  try {
+    const resAccLogin = await fetch(`${BASE_URL}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'accountant@vyapar.com', password: 'accountant123' })
+    });
+    const accData = await resAccLogin.json();
+    assert(resAccLogin.ok && accData.token, 'Head Accountant authentication');
+    assert(accData.user && accData.user.role === 'accountant', 'Accountant role verified');
+
+    const accHeaders = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accData.token}`
+    };
+
+    const resLedgers = await fetch(`${BASE_URL}/api/accountant/ledgers`, { headers: accHeaders });
+    assert(resLedgers.ok || resLedgers.status === 200, 'Accountant access double-entry ledger books');
+  } catch (e) {
+    assert(false, 'Accountant Portal', e.message);
+  }
+
+  // -------------------------------------------------------------------------
+  // FEATURE 19: End-to-End Customer Payment & Invoice Reconciliation
+  // -------------------------------------------------------------------------
+  console.log('\n👉 [FEATURE 19] Customer Payment Reconciliation');
+  try {
+    const resConfirm = await fetch(`${BASE_URL}/api/payments/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        invoiceId: testInvoiceId,
+        amount: 1177.64,
+        paymentMode: 'UPI',
+        referenceNo: 'UPI-TEST-' + Date.now()
+      })
+    });
+    const confirmData = await resConfirm.json();
+    assert(resConfirm.ok && (confirmData.status === 'ok' || confirmData.status === 'success'), 'Customer payment completed and invoice reconciled');
+  } catch (e) {
+    assert(false, 'Payment Reconciliation', e.message);
+  }
 
   // -------------------------------------------------------------------------
   // SUMMARY

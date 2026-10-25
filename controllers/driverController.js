@@ -1003,14 +1003,16 @@ async function getPublicOrderTracking(req, res, next) {
 async function updateDriverLocation(req, res, next) {
   try {
     const db = getDB();
-    const { lat, lng, speed, heading, accuracy, orderId } = req.body;
-    if (lat === undefined || lng === undefined) {
+    const latRaw = req.body.lat !== undefined ? req.body.lat : req.body.latitude;
+    const lngRaw = req.body.lng !== undefined ? req.body.lng : req.body.longitude;
+    const { speed, heading, accuracy, orderId } = req.body;
+    if (latRaw === undefined || lngRaw === undefined) {
       return res.status(400).json({ message: "Latitude and Longitude are required" });
     }
 
     const locData = {
-      lat: Number(lat),
-      lng: Number(lng),
+      lat: Number(latRaw),
+      lng: Number(lngRaw),
       speed: Number(speed) || 0,
       heading: Number(heading) || 0,
       accuracy: Number(accuracy) || 10,

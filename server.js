@@ -73,6 +73,7 @@ const staffRoutes = require('./routes/staffRoutes');
 app.use('/api', authRoutes);
 app.use('/api', healthRoutes);
 app.use('/api/payments', require('./routes/paymentRoutes'));
+app.use('/api/payment', require('./routes/paymentRoutes'));
 app.use('/api', driverRoutes);
 app.use('/api', dbRoutes);
 // Admin APIs (delivery, barcode, etc.)

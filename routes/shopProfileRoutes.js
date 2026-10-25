@@ -45,6 +45,7 @@ const upload = multer({
 // Profile Routes
 router.get('/', getShopProfile);
 router.post('/', upsertShopProfile);
+router.put('/', upsertShopProfile);
 router.post('/logo', upload.single('logo'), uploadShopLogo);
 
 // Branches Routes

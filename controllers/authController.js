@@ -497,7 +497,8 @@ async function sendOTP(req, res) {
     responsePayload.otp = process.env.DEV_RETURN_OTP === 'true' ? code : process.env.DEV_RETURN_OTP;
   } else {
     if (!sent) {
-      responsePayload.note = 'No delivery provider configured; OTP logged to server console.';
+      responsePayload.note = 'No delivery provider configured; test OTP provided.';
+      responsePayload.otp = code;
     } else if (sendError) {
       responsePayload.warning = 'OTP queued but delivery reported a non-fatal error.';
     }

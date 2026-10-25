@@ -91,6 +91,22 @@ app.use('/api/accountant', accountantRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/user/payments', require('./controllers/superController').getUserPayments);
 
+// Direct download route for the official presentation deck
+const handleDownloadPPTX = (req, res) => {
+  const pptxPath = path.resolve(__dirname, '../Vyapar_2.0_Presentation.pptx');
+  if (fs.existsSync(pptxPath)) {
+    return res.download(pptxPath, 'Vyapar_2.0_Presentation.pptx');
+  }
+  const altPath = path.resolve(__dirname, '../frontend/public/Vyapar_2.0_Presentation.pptx');
+  if (fs.existsSync(altPath)) {
+    return res.download(altPath, 'Vyapar_2.0_Presentation.pptx');
+  }
+  return res.status(404).send('Presentation file not found');
+};
+
+app.get('/api/download-pptx', handleDownloadPPTX);
+app.get('/download-pptx', handleDownloadPPTX);
+
 
 
 // Generic error handler to ensure JSON responses for uncaught errors

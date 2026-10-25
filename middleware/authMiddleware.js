@@ -33,6 +33,7 @@ const protectAdmin = async (req, res, next) => {
     path.startsWith('/api/seed') ||
     path.startsWith('/api/admin/notifications') ||
     path.startsWith('/api/barcodes') ||
+    path.startsWith('/api/download-pptx') ||
     path.startsWith('/api/invoices/scan-receipt')
   ) {
     return next();

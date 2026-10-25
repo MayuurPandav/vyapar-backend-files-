@@ -516,21 +516,11 @@ async function sendOTP(req, res) {
     });
   }
 
-  // Explicit dev testing fallback only if DEV_RETURN_OTP is explicitly enabled
-  const devReturn = (process.env.DEV_RETURN_OTP || 'false').toLowerCase() === 'true';
-  if (devReturn) {
-    return res.json({
-      status: 'success',
-      otp: code,
-      message: `DEV_RETURN_OTP is enabled. Test code: ${code}`
-    });
-  }
-
   return res.status(502).json({
     status: 'error',
     message: sendError
       ? `Failed to send verification code: ${sendError}`
-      : `No active delivery service configured for ${field}. Please check server settings.`
+      : `No active delivery service configured for ${field}. Please configure live provider credentials on server.`
   });
 }
 

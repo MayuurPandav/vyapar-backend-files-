@@ -984,6 +984,9 @@ async function addParty(req, res) {
   try {
     const db = getDB();
     const doc = { ...party, username };
+    if (!doc.email || !doc.email.trim()) {
+      delete doc.email;
+    }
     await db.collection('parties').insertOne(doc);
 
     // Auto-sync customer/supplier ledger to Accountant
@@ -2949,13 +2952,12 @@ async function bulkImportParties(req, res) {
     const docs = parties.map(p => {
       currentId++;
       const openingBal = Number(p.openingBalance) || 0;
-      return {
+      const doc = {
         id: currentId,
         username,
         name: p.name || '',
         type: p.type || 'Customer',
         phone: p.phone || '',
-        email: p.email || '',
         whatsappNumber: p.whatsappNumber || '',
         billingAddress: p.billingAddress || '',
         shippingAddress: p.shippingAddress || '',
@@ -2971,6 +2973,10 @@ async function bulkImportParties(req, res) {
         notes: p.notes || '',
         lastTxn: new Date().toISOString().substring(0, 10)
       };
+      if (p.email && p.email.trim()) {
+        doc.email = p.email.trim();
+      }
+      return doc;
     });
 
     if (docs.length) {

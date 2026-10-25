@@ -99,7 +99,7 @@ const protectAdmin = async (req, res, next) => {
 
       return next();
     } catch (error) {
-      if (path.includes('/export')) {
+      if (path.includes('/export') || path.includes('/barcodes/render') || path.includes('/barcodes/pdf')) {
         return next();
       }
       return res.status(401).json({ status: 'error', message: 'Not authorized, token failed' });
@@ -107,7 +107,7 @@ const protectAdmin = async (req, res, next) => {
   }
 
   if (!token) {
-    if (path.includes('/export')) {
+    if (path.includes('/export') || path.includes('/barcodes/render') || path.includes('/barcodes/pdf')) {
       return next();
     }
     return res.status(401).json({ status: 'error', message: 'Not authorized, no token' });

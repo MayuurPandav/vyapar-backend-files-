@@ -44,7 +44,11 @@ async function seedAdminSettings() {
       },
       { upsert: true }
     );
-    console.log('✅ Admin demo profile & driver DP-1001 seeded successfully.');
+    await db.collection('parties').updateMany(
+      { email: '' },
+      { $unset: { email: '' } }
+    );
+    console.log('✅ Admin demo profile & driver DP-1001 seeded successfully, empty emails unset.');
     process.exit(0);
   } catch (err) {
     console.error('❌ Failed to seed admin settings:', err);

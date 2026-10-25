@@ -20,6 +20,7 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
+const fs = require('fs');
 const cookieParser = require('cookie-parser');
 const { connectDB, getDB } = require('./config/db');
 
@@ -98,15 +99,20 @@ app.use((err, req, res, next) => {
   res.status(500).json({ status: 'error', message: err && err.message ? err.message : 'Internal server error' });
 });
 
-// Catch-all route to serve the SPA (React routing support)
-app.get('/login', (req, res) => {
-  res.sendFile(path.join(FRONTEND_DIR, 'index.html'));
+// Root healthcheck & status (Immediate 200 OK for Render / cloud health probes)
+app.get('/', (req, res) => {
+  if (fs.existsSync(path.join(FRONTEND_DIR, 'index.html'))) {
+    return res.sendFile(path.join(FRONTEND_DIR, 'index.html'));
+  }
+  res.json({ status: 'ok', service: 'Vyapar 2.0 Backend API', timestamp: new Date().toISOString() });
 });
-app.get('/super_admin.html', (req, res) => {
-  res.sendFile(path.join(FRONTEND_DIR, 'index.html'));
-});
+
+// Catch-all route to serve the SPA if frontend build exists
 app.get('*', (req, res) => {
-  res.sendFile(path.join(FRONTEND_DIR, 'index.html'));
+  if (fs.existsSync(path.join(FRONTEND_DIR, 'index.html'))) {
+    return res.sendFile(path.join(FRONTEND_DIR, 'index.html'));
+  }
+  res.status(404).json({ error: 'Endpoint not found', apiDocs: '/api/health' });
 });
 
 // Database Initialization & Start-up
@@ -231,8 +237,8 @@ async function init() {
       console.log('Client connected for real-time updates');
     });
 
-    server.listen(PORT, () => {
-      console.log(`SERVER START: Vyapar Express Server running on http://localhost:${PORT}`);
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`SERVER START: Vyapar Express Server running on port ${PORT}`);
     });
 
     // Start announcement scheduler (process scheduled broadcasts)

@@ -396,14 +396,32 @@ async function sendOTP(req, res) {
             },
             body: JSON.stringify({
               personalizations: [{ to: [{ email: cleanValue }] }],
-              from: { email: SENDGRID_FROM },
-              subject: 'Your Vyapar verification code',
-              content: [{ type: 'text/plain', value: `Your verification code is: ${code}` }]
+              from: { email: SENDGRID_FROM, name: 'Vyapar 2.0' },
+              subject: `${code} is your Vyapar 2.0 verification code`,
+              content: [
+                { type: 'text/plain', value: `Your Vyapar verification code is: ${code}. Valid for 10 minutes.` },
+                {
+                  type: 'text/html',
+                  value: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:480px;margin:0 auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
+                    <div style="display:flex;align-items:center;margin-bottom:20px;">
+                      <h2 style="color:#4f46e5;margin:0;font-size:22px;font-weight:700;">Vyapar 2.0</h2>
+                    </div>
+                    <p style="color:#334155;font-size:15px;line-height:1.5;margin:0 0 16px;">Hello,</p>
+                    <p style="color:#334155;font-size:15px;line-height:1.5;margin:0 0 20px;">Use the following one-time verification code to complete your business profile setup:</p>
+                    <div style="background:#f8fafc;border:2px dashed #cbd5e1;border-radius:10px;padding:18px;text-align:center;margin-bottom:20px;">
+                      <span style="font-size:36px;font-weight:800;letter-spacing:8px;color:#1e293b;font-family:monospace;">${code}</span>
+                    </div>
+                    <p style="color:#64748b;font-size:13px;line-height:1.5;margin:0 0 16px;">This code is valid for <strong>10 minutes</strong>. If you did not request this verification, please disregard this email.</p>
+                    <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0;" />
+                    <p style="color:#94a3b8;font-size:12px;margin:0;">&copy; 2026 Vyapar 2.0 Enterprise Cloud. All rights reserved.</p>
+                  </div>`
+                }
+              ]
             })
           });
           if (!resp.ok) {
             const errTxt = await resp.text();
-            throw new Error(`SendGrid API returned status ${resp.status}: ${errTxt}`);
+            throw new Error(`SendGrid returned status ${resp.status}: ${errTxt}`);
           }
           sent = true;
           console.log(`[OTP EMAIL SUCCESS] SendGrid sent to ${cleanValue}`);
@@ -424,8 +442,9 @@ async function sendOTP(req, res) {
           await transporter.sendMail({
             from: SMTP_FROM || SMTP_USER,
             to: cleanValue,
-            subject: 'Your Vyapar verification code',
-            text: `Your verification code is: ${code}`
+            subject: `${code} is your Vyapar 2.0 verification code`,
+            text: `Your verification code is: ${code}`,
+            html: `<p>Your Vyapar verification code is: <strong>${code}</strong></p>`
           });
           sent = true;
           console.log(`[OTP EMAIL SUCCESS] SMTP sent to ${cleanValue}`);
@@ -487,24 +506,32 @@ async function sendOTP(req, res) {
     sendError = err.message;
   }
 
-  // Always log the OTP to the server console for easy testing/debugging and local fallback
-  console.log(`[OTP] ${username} ${field} -> ${cleanValue} : ${code}`);
+  // Log dispatch record
+  console.log(`[OTP DISPATCH] ${username} ${field} -> ${cleanValue} | Sent: ${sent}`);
 
-  const devReturn = (process.env.DEV_RETURN_OTP || 'false').toLowerCase() === 'true';
-  const responsePayload = { status: 'success', message: `OTP dispatched to ${field}.` };
-
-  if (devReturn) {
-    responsePayload.otp = process.env.DEV_RETURN_OTP === 'true' ? code : process.env.DEV_RETURN_OTP;
-  } else {
-    if (!sent) {
-      responsePayload.note = 'No delivery provider configured; test OTP provided.';
-      responsePayload.otp = code;
-    } else if (sendError) {
-      responsePayload.warning = 'OTP queued but delivery reported a non-fatal error.';
-    }
+  if (sent) {
+    return res.json({
+      status: 'success',
+      message: `Verification code sent to ${cleanValue}. Please check your inbox (and spam folder).`
+    });
   }
 
-  return res.json(responsePayload);
+  // Explicit dev testing fallback only if DEV_RETURN_OTP is explicitly enabled
+  const devReturn = (process.env.DEV_RETURN_OTP || 'false').toLowerCase() === 'true';
+  if (devReturn) {
+    return res.json({
+      status: 'success',
+      otp: code,
+      message: `DEV_RETURN_OTP is enabled. Test code: ${code}`
+    });
+  }
+
+  return res.status(502).json({
+    status: 'error',
+    message: sendError
+      ? `Failed to send verification code: ${sendError}`
+      : `No active delivery service configured for ${field}. Please check server settings.`
+  });
 }
 
 // Verify OTP

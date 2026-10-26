@@ -7,8 +7,9 @@ const { getDB } = require('../config/db');
  * Format: upi://pay?pa={vpa}&pn={name}&am={amount}&tr={txnRef}&tn={note}&cu=INR
  */
 function generateUPIString({ vpa, merchantName, amount, invoiceId, note }) {
-  const safeVpa = encodeURIComponent((vpa || 'merchant@upi').trim());
-  const safeName = encodeURIComponent((merchantName || 'Vyapar Merchant').trim());
+  const defaultUpi = process.env.DEFAULT_UPI_ID || 'mayurpandav128@okhdfcbank';
+  const safeVpa = encodeURIComponent((vpa || defaultUpi).trim());
+  const safeName = encodeURIComponent((merchantName || 'Mayur Pandav').trim());
   const safeAmount = Number(amount || 0).toFixed(2);
   const safeRef = encodeURIComponent(String(invoiceId || Date.now()).trim());
   const safeNote = encodeURIComponent(note || `Payment for ${invoiceId}`);

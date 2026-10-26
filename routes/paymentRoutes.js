@@ -43,7 +43,7 @@ router.get('/public/:invoiceId', async (req, res) => {
               || await db.collection('settings').findOne({ username: sale.username }) 
               || {};
 
-    const merchantVpa = shop.upiId || shop.upi_id || 'merchant@upi';
+    const merchantVpa = shop.upiId || shop.upi_id || process.env.DEFAULT_UPI_ID || 'mayurpandav128@okhdfcbank';
     const merchantName = shop.shopName || shop.businessName || 'Vyapar Store';
 
     const totalAmount = parseFloat(sale.totalAmount || sale.amount || 0);
@@ -190,8 +190,10 @@ router.post('/create-link', async (req, res) => {
       return res.status(404).json({ status: 'error', message: 'Invoice not found' });
     }
 
-    const shop = await db.collection('shop_profiles').findOne({ username: sale.username }) || {};
-    const merchantVpa = shop.upiId || 'merchant@upi';
+    const shop = await db.collection('shop_profiles').findOne({ username: sale.username }) 
+              || await db.collection('settings').findOne({ username: sale.username }) 
+              || {};
+    const merchantVpa = shop.upiId || shop.upi_id || process.env.DEFAULT_UPI_ID || 'mayurpandav128@okhdfcbank';
     const merchantName = shop.shopName || 'Vyapar Store';
 
     const total = parseFloat(sale.totalAmount || sale.amount || 0);
